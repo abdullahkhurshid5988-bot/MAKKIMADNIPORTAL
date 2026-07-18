@@ -31,9 +31,13 @@ const HAJJ_PACKAGES: HajjPackage[] = [
     title: "21 Days Premium Hajj Package",
     duration: "21 Days",
     badge: "Premium Plan Without Ticket",
-    image: "/images/hajj-21-days.jpeg",
-    downloadName: "Makki-Madni-21-Days-Hajj-Package-2027.jpeg",
+
+    // Exact uploaded flyer image
+    image: "/images/21 days.jpg",
+
+    downloadName: "Makki-Madni-21-Days-Hajj-Package-2027.jpg",
     priceLabel: "Starting from PKR 2,675,000",
+
     prices: [
       {
         room: "Quad",
@@ -53,7 +57,9 @@ const HAJJ_PACKAGES: HajjPackage[] = [
         extra: "Azizia Double Bed Charges: USD 950 per person",
       },
     ],
+
     detailsTitle: "21 Days Package Details",
+
     details: [
       "Maktab A Category — Zone 01",
       "Premium plan without air ticket",
@@ -68,6 +74,7 @@ const HAJJ_PACKAGES: HajjPackage[] = [
       "Experienced guides",
       "24/7 support assistance",
     ],
+
     itinerary: [
       "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
       "10–13 May: Stay in Azizia — Full Board",
@@ -84,9 +91,10 @@ const HAJJ_PACKAGES: HajjPackage[] = [
     title: "17 Days Premium Hajj Package",
     duration: "17 Days",
     badge: "Premium Plan Without Ticket",
-    image: "/images/hajj-17-days.jpeg",
-    downloadName: "Makki-Madni-17-Days-Hajj-Package-2027.jpeg",
+    image: "/images/17 days.jfif",
+    downloadName: "Makki-Madni-17-Days-Hajj-Package-2027.jfif",
     priceLabel: "Starting from PKR 2,525,000",
+
     prices: [
       {
         room: "Quad",
@@ -106,7 +114,9 @@ const HAJJ_PACKAGES: HajjPackage[] = [
         extra: "Azizia Double Bed Charges: USD 950 per person",
       },
     ],
+
     detailsTitle: "17 Days Package Details",
+
     details: [
       "Maktab A Category — Zone 01",
       "Premium plan without air ticket",
@@ -121,6 +131,7 @@ const HAJJ_PACKAGES: HajjPackage[] = [
       "Experienced staff",
       "24/7 support service",
     ],
+
     itinerary: [
       "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
       "10–13 May: Stay in Azizia — Full Board",
@@ -137,9 +148,10 @@ const HAJJ_PACKAGES: HajjPackage[] = [
     title: "14 Days Premium Hajj Package",
     duration: "14 Days",
     badge: "Premium Plan Without Ticket",
-    image: "/images/hajj-14-days.jpeg",
+    image: "/images/hajj 14 days.jpeg",
     downloadName: "Makki-Madni-14-Days-Hajj-Package-2027.jpeg",
     priceLabel: "Starting from PKR 2,275,000",
+
     prices: [
       {
         room: "Quad",
@@ -159,7 +171,9 @@ const HAJJ_PACKAGES: HajjPackage[] = [
         extra: "Azizia Double Bed Charges: USD 950 per person",
       },
     ],
+
     detailsTitle: "14 Days Package Details",
+
     details: [
       "Maktab A Category — Zone 01",
       "Premium plan without air ticket",
@@ -173,6 +187,7 @@ const HAJJ_PACKAGES: HajjPackage[] = [
       "Experienced guides",
       "24/7 support assistance",
     ],
+
     itinerary: [
       "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
       "10–13 May: Stay in Azizia — Full Board",
@@ -188,10 +203,12 @@ const HAJJ_PACKAGES: HajjPackage[] = [
     title: "Maktab Category-A Facilities",
     duration: "Facilities",
     badge: "Facilities & Contact Details",
-    image: "/images/hajj-facilities-details.jpeg",
-    downloadName: "Makki-Madni-Maktab-Category-A-Facilities.jpeg",
+    image: "/images/package details.jfif",
+    downloadName: "Makki-Madni-Maktab-Category-A-Facilities.jfif",
     priceLabel: "Complete Facilities & Policy Information",
+
     detailsTitle: "Facilities & Contact Details",
+
     details: [
       "VIP Zone 1 location closest to the Rami area",
       "Air-conditioned carpeted tent cabins with walls and doors in Mina",
@@ -219,11 +236,11 @@ const HAJJ_PACKAGES: HajjPackage[] = [
 function buildWhatsAppMessage(pkg: HajjPackage) {
   const prices = pkg.prices
     ? pkg.prices
-        .map((item) => {
-          return `${item.room} Package
+        .map(
+          (item) => `${item.room} Package
 PKR ${item.pkr}
-USD ${item.usd}${item.extra ? `\n${item.extra}` : ""}`;
-        })
+USD ${item.usd}${item.extra ? `\n${item.extra}` : ""}`
+        )
         .join("\n\n")
     : pkg.priceLabel;
 
@@ -262,7 +279,7 @@ export default function Packages() {
       id="packages"
       className="relative overflow-hidden bg-[#f7f3e9] px-4 py-20 text-[#082017] sm:px-6 lg:px-8 lg:py-28"
     >
-      {/* Background Decorations */}
+      {/* Background Design */}
       <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_20%_15%,rgba(212,175,55,.18),transparent_28%),radial-gradient(circle_at_85%_25%,rgba(11,93,59,.12),transparent_30%)]" />
 
       <div className="relative mx-auto max-w-7xl">
@@ -282,7 +299,7 @@ export default function Packages() {
           </p>
         </div>
 
-        {/* Packages Grid */}
+        {/* Package Cards */}
         <div className="mt-14 grid items-start gap-8 lg:grid-cols-2">
           {HAJJ_PACKAGES.map((pkg) => {
             const whatsappMessage = buildWhatsAppMessage(pkg);
@@ -296,18 +313,19 @@ export default function Packages() {
                 key={pkg.id}
                 className="group overflow-hidden rounded-[2rem] border border-[#d4af37]/25 bg-white shadow-[0_18px_60px_rgba(8,32,23,0.12)] transition duration-500 hover:-translate-y-2 hover:shadow-[0_26px_80px_rgba(8,32,23,0.18)]"
               >
-                {/* Package Image */}
+                {/* Flyer Image */}
                 <div className="relative aspect-[4/5] overflow-hidden bg-[#e8e1d2]">
                   <Image
                     src={pkg.image}
                     alt={`${pkg.title} flyer`}
                     fill
+                    unoptimized
                     sizes="(max-width: 1024px) 100vw, 50vw"
                     className="object-contain transition duration-700 group-hover:scale-[1.015]"
                     priority={pkg.id === 1}
                   />
 
-                  {/* Image Badges */}
+                  {/* Badges */}
                   <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-5">
                     <span className="rounded-full bg-[#d4af37] px-4 py-2 text-sm font-black text-[#082017] shadow-lg">
                       {pkg.duration}
@@ -319,7 +337,7 @@ export default function Packages() {
                   </div>
                 </div>
 
-                {/* Package Content */}
+                {/* Card Content */}
                 <div className="p-6 sm:p-8">
                   <h3 className="text-2xl font-black text-[#0b5d3b] sm:text-3xl">
                     {pkg.title}
@@ -444,4 +462,4 @@ export default function Packages() {
       </div>
     </section>
   );
-} 
+}
