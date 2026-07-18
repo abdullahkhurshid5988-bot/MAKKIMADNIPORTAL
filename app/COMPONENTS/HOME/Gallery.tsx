@@ -1,363 +1,434 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
 
-type GalleryItem = {
-  id: number;
-  src: string;
-  title: string;
-  category: string;
+type PackagePrice = {
+  room: string;
+  pkr: string;
+  usd: string;
+  extra?: string;
 };
 
-const gallery: GalleryItem[] = [
+type HajjPackage = {
+  id: number;
+  title: string;
+  duration: string;
+  badge: string;
+  image: string;
+  downloadName: string;
+  priceLabel: string;
+  prices?: PackagePrice[];
+  detailsTitle: string;
+  details: string[];
+  itinerary?: string[];
+};
+
+const WHATSAPP_NUMBER = "923006975181";
+
+const HAJJ_PACKAGES: HajjPackage[] = [
   {
     id: 1,
-    src: "/images/17 days.jfif",
-    title: "17 Days Hajj Package",
-    category: "Packages",
+    title: "14 Days Premium Hajj Package",
+    duration: "14 Days",
+    badge: "Premium Plan Without Ticket",
+    image: "/images/hajj 14 days.jpeg",
+    downloadName: "Makki-Madni-14-Days-Hajj-Package.jpeg",
+    priceLabel: "Starting from PKR 2,275,000",
+    prices: [
+      {
+        room: "Quad",
+        pkr: "2,275,000",
+        usd: "8,180",
+      },
+      {
+        room: "Triple",
+        pkr: "2,350,000",
+        usd: "8,450",
+        extra: "Azizia Triple Bed: USD 350 per person",
+      },
+      {
+        room: "Double",
+        pkr: "2,390,000",
+        usd: "8,630",
+        extra: "Azizia Double Bed: USD 950 per person",
+      },
+    ],
+    detailsTitle: "14 Days Package Details",
+    details: [
+      "Maktab A Category Zone 01",
+      "Premium plan without air ticket",
+      "Qurbani is not included",
+      "Azizia accommodation is sharing by default",
+      "Separate room in Azizia is subject to additional charges",
+      "3 nights in Madinah",
+      "4 nights in Azizia",
+      "Hajj days in Mina, Arafat and Muzdalifah",
+      "Madinah Emaar Royal accommodation",
+      "Experienced Hajj guides",
+      "24/7 support assistance",
+    ],
+    itinerary: [
+      "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
+      "10–13 May: Azizia stay — Full Board",
+      "14–18 May: Mina, Arafat and Muzdalifah — Full Board",
+      "19–20 May: Azizia stay — Full Board",
+      "20–23 May: Madinah Emaar Royal — Half Board",
+      "23 May: Madinah or Jeddah to Lahore",
+    ],
   },
+
   {
     id: 2,
-    src: "/images/21 days.jpg",
-    title: "21 Days Hajj Package",
-    category: "Packages",
+    title: "17 Days Premium Hajj Package",
+    duration: "17 Days",
+    badge: "Premium Plan Without Ticket",
+    image: "/images/17 days.jfif",
+    downloadName: "Makki-Madni-17-Days-Hajj-Package.jfif",
+    priceLabel: "Starting from PKR 2,525,000",
+    prices: [
+      {
+        room: "Quad",
+        pkr: "2,525,000",
+        usd: "9,080",
+      },
+      {
+        room: "Triple",
+        pkr: "2,590,000",
+        usd: "9,300",
+        extra: "Azizia Triple Bed: USD 350 per person",
+      },
+      {
+        room: "Double",
+        pkr: "2,690,000",
+        usd: "9,800",
+        extra: "Azizia Double Bed: USD 950 per person",
+      },
+    ],
+    detailsTitle: "17 Days Package Details",
+    details: [
+      "Maktab A Category Zone 01",
+      "Premium plan without air ticket",
+      "Qurbani is not included",
+      "Azizia accommodation is sharing by default",
+      "Separate room in Azizia is subject to additional charges",
+      "3 nights in Madinah",
+      "4 nights in Azizia",
+      "Hajj days in Mina, Arafat and Muzdalifah",
+      "Makkah Movenpick 5 Star accommodation",
+      "Madinah Hilton accommodation",
+      "Experienced staff",
+      "24/7 support service",
+    ],
+    itinerary: [
+      "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
+      "10–13 May: Azizia stay — Full Board",
+      "14–18 May: Mina, Arafat and Muzdalifah — Full Board",
+      "19–20 May: Azizia stay — Full Board",
+      "20–23 May: Makkah Movenpick 5 Star — Half Board",
+      "23–26 May: Madinah Hilton — Half Board",
+      "26 May: Madinah or Jeddah to Lahore",
+    ],
   },
+
   {
     id: 3,
-    src: "/images/21days.jfif",
-    title: "21 Days Premium Package",
-    category: "Packages",
+    title: "21 Days Premium Hajj Package",
+    duration: "21 Days",
+    badge: "Premium Plan Without Ticket",
+    image: "/images/21 days.jpg",
+    downloadName: "Makki-Madni-21-Days-Hajj-Package.jpg",
+    priceLabel: "Starting from PKR 2,675,000",
+    prices: [
+      {
+        room: "Quad",
+        pkr: "2,675,000",
+        usd: "9,620",
+      },
+      {
+        room: "Triple",
+        pkr: "2,775,000",
+        usd: "9,980",
+        extra: "Azizia Triple Bed: USD 350 per person",
+      },
+      {
+        room: "Double",
+        pkr: "2,975,000",
+        usd: "10,700",
+        extra: "Azizia Double Bed: USD 950 per person",
+      },
+    ],
+    detailsTitle: "21 Days Package Details",
+    details: [
+      "Maktab A Category Zone 01",
+      "Premium plan without air ticket",
+      "Qurbani is not included",
+      "Azizia accommodation is sharing by default",
+      "Separate room in Azizia is subject to additional charges",
+      "3 nights in Madinah",
+      "4 nights in Azizia",
+      "Hajj days in Mina, Arafat and Muzdalifah",
+      "Makkah Movenpick 5 Star accommodation",
+      "Madinah Hilton 5 Star accommodation",
+      "Experienced guides",
+      "24/7 support assistance",
+    ],
+    itinerary: [
+      "9–10 May: Arrival at Jeddah and transfer to Azizia — Full Board",
+      "10–13 May: Azizia stay — Full Board",
+      "14–18 May: Mina, Arafat and Muzdalifah — Full Board",
+      "19–20 May: Azizia stay — Full Board",
+      "20–26 May: Makkah Movenpick 5 Star — Half Board",
+      "26–30 May: Madinah Hilton 5 Star — Half Board",
+      "30 May: Madinah or Jeddah to Lahore",
+    ],
   },
+
   {
     id: 4,
-    src: "/images/hajj 14 days.jpeg",
-    title: "14 Days Hajj Package",
-    category: "Packages",
-  },
-  {
-    id: 5,
-    src: "/images/package details.jfif",
-    title: "Package Details",
-    category: "Packages",
-  },
-  {
-    id: 6,
-    src: "/images/package17.jpg.jpeg",
-    title: "17 Days Package Details",
-    category: "Packages",
-  },
-  {
-    id: 7,
-    src: "/images/premium-hajj.jpg.jpeg",
-    title: "Premium Hajj Package",
-    category: "Packages",
-  },
-
-  {
-    id: 8,
-    src: "/images/after hajj.jpeg",
-    title: "After Hajj",
-    category: "Hajj",
-  },
-  {
-    id: 9,
-    src: "/images/hajji.jpeg",
-    title: "Hajj Pilgrims",
-    category: "Hajj",
-  },
-  {
-    id: 10,
-    src: "/images/hajji (2).jpeg",
-    title: "Hajj Pilgrims Group",
-    category: "Hajj",
-  },
-  {
-    id: 11,
-    src: "/images/hujjaj.jpeg",
-    title: "Hujjaj Group",
-    category: "Hajj",
-  },
-  {
-    id: 12,
-    src: "/images/hero.jpg.jfif",
-    title: "Hajj Journey",
-    category: "Hajj",
-  },
-  {
-    id: 13,
-    src: "/images/hero-2.jpg",
-    title: "Sacred Journey",
-    category: "Hajj",
-  },
-  {
-    id: 14,
-    src: "/images/hero.jpg (3).jfif",
-    title: "Hajj & Umrah Journey",
-    category: "Hajj",
-  },
-
-  {
-    id: 15,
-    src: "/images/hajj training.jpeg",
-    title: "Hajj Training",
-    category: "Training",
-  },
-  {
-    id: 16,
-    src: "/images/hajj training (2).jpeg",
-    title: "Hajj Training Session",
-    category: "Training",
-  },
-  {
-    id: 17,
-    src: "/images/hajj training (3).jpeg",
-    title: "Hajj Training Program",
-    category: "Training",
-  },
-  {
-    id: 18,
-    src: "/images/training.jpeg",
-    title: "Pilgrims Training",
-    category: "Training",
-  },
-
-  {
-    id: 19,
-    src: "/images/azizia hotel.jpeg",
-    title: "Azizia Hotel",
-    category: "Azizia",
-  },
-  {
-    id: 20,
-    src: "/images/azizia hotel (2).jfif",
-    title: "Azizia Hotel Interior",
-    category: "Azizia",
-  },
-  {
-    id: 21,
-    src: "/images/azizia hotel (3).jfif",
-    title: "Azizia Hotel Room",
-    category: "Azizia",
-  },
-  {
-    id: 22,
-    src: "/images/azizia hotel.jfif",
-    title: "Azizia Hotel Night View",
-    category: "Azizia",
-  },
-
-  {
-    id: 23,
-    src: "/images/madina hilton.jfif",
-    title: "Madinah Hilton",
-    category: "Hotels",
-  },
-  {
-    id: 24,
-    src: "/images/madina hilton (2).jfif",
-    title: "Madinah Hilton Exterior",
-    category: "Hotels",
-  },
-  {
-    id: 25,
-    src: "/images/madina hilton hotel.jfif",
-    title: "Madinah Hilton Hotel",
-    category: "Hotels",
-  },
-  {
-    id: 26,
-    src: "/images/madina hilton hotel (2).jfif",
-    title: "Madinah Hilton Accommodation",
-    category: "Hotels",
-  },
-  {
-    id: 27,
-    src: "/images/madina hilton hotel (3).jfif",
-    title: "Madinah Hilton Room",
-    category: "Hotels",
-  },
-
-  {
-    id: 28,
-    src: "/images/makkah (2).jfif",
-    title: "Makkah",
-    category: "Makkah",
-  },
-  {
-    id: 29,
-    src: "/images/makkah movin pic.jfif",
-    title: "Makkah Movenpick",
-    category: "Hotels",
-  },
-  {
-    id: 30,
-    src: "/images/makkah movin pick.jfif",
-    title: "Makkah Movenpick Hotel",
-    category: "Hotels",
-  },
-  {
-    id: 31,
-    src: "/images/makkah movin movinpick.jfif",
-    title: "Makkah Movenpick Room",
-    category: "Hotels",
-  },
-
-  {
-    id: 32,
-    src: "/images/mina camp.jpeg",
-    title: "Mina Camp",
-    category: "Mashair",
-  },
-  {
-    id: 33,
-    src: "/images/mina maktab a.jpeg",
-    title: "Mina Maktab Category A",
-    category: "Mashair",
-  },
-  {
-    id: 34,
-    src: "/images/mina tant.jpeg",
-    title: "Mina Tent",
-    category: "Mashair",
-  },
-  {
-    id: 35,
-    src: "/images/mina.jpeg",
-    title: "Mina Facilities",
-    category: "Mashair",
-  },
-
-  {
-    id: 36,
-    src: "/images/ziarat.jpeg",
-    title: "Ziyarat",
-    category: "Ziyarat",
-  },
-
-  {
-    id: 37,
-    src: "/images/logo.jpg",
-    title: "Makki Madni Logo",
-    category: "Company",
-  },
-  {
-    id: 38,
-    src: "/images/card.jpeg",
-    title: "Company Card",
-    category: "Company",
+    title: "Maktab Category-A Facilities",
+    duration: "Facilities",
+    badge: "Facilities & Contact Details",
+    image: "/images/package details.jfif",
+    downloadName: "Makki-Madni-Facilities-Details.jfif",
+    priceLabel: "Complete Facilities and Policy Information",
+    detailsTitle: "Package Facilities",
+    details: [
+      "VIP Zone 1 closest to the Rami area",
+      "Air-conditioned carpeted tent cabins in Mina",
+      "Tent cabins with walls and doors",
+      "Approximately 15–16 persons per tent",
+      "Private washrooms in Mina and Arafat",
+      "Mattress or sofa beds with pillows and blankets",
+      "Full-board buffet in Mina",
+      "Hot and cold drinks available",
+      "Arafat air-conditioned marquee",
+      "Muzdalifah sleeping kit and meal box",
+      "Airport meet and assist service",
+      "Baggage handling service",
+      "VIP air-conditioned buses with washroom",
+      "Seat-by-seat transportation",
+      "Makkah and Madinah Ziyarat with guide",
+      "Complimentary Azizia to Haram transport",
+      "Required documents mentioned in the flyer",
+      "Payment policy mentioned in the flyer",
+    ],
   },
 ];
 
-const categories = [
-  "All",
-  "Packages",
-  "Hajj",
-  "Training",
-  "Azizia",
-  "Hotels",
-  "Makkah",
-  "Mashair",
-  "Ziyarat",
-  "Company",
-];
+function createWhatsAppMessage(pkg: HajjPackage) {
+  const pricingText = pkg.prices
+    ? pkg.prices
+        .map(
+          (price) =>
+            `${price.room}
+PKR ${price.pkr}
+USD ${price.usd}${price.extra ? `\n${price.extra}` : ""}`
+        )
+        .join("\n\n")
+    : pkg.priceLabel;
 
-export default function Gallery() {
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const detailsText = pkg.details
+    .map((detail) => `• ${detail}`)
+    .join("\n");
 
-  const filteredGallery =
-    selectedCategory === "All"
-      ? gallery
-      : gallery.filter((item) => item.category === selectedCategory);
+  const itineraryText = pkg.itinerary
+    ? `
 
+Tentative Travel Itinerary:
+${pkg.itinerary.map((item) => `• ${item}`).join("\n")}`
+    : "";
+
+  return `Assalam-o-Alaikum,
+
+I am interested in:
+
+${pkg.title}
+${pkg.badge}
+
+Package Price:
+${pricingText}
+
+${pkg.detailsTitle}:
+${detailsText}${itineraryText}
+
+Please send me complete availability, booking, documents and payment details.
+
+Thank you.`;
+}
+
+export default function Packages() {
   return (
     <section
-      id="gallery"
+      id="packages"
       className="relative overflow-hidden bg-[#f8f5ef] px-4 py-20 text-[#082017] sm:px-6 lg:px-8 lg:py-28"
     >
       <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_15%_20%,rgba(212,175,55,.18),transparent_28%),radial-gradient(circle_at_85%_30%,rgba(11,93,59,.12),transparent_30%)]" />
 
       <div className="relative mx-auto max-w-7xl">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="font-bold uppercase tracking-[0.25em] text-[#b28a2e]">
-            Our Gallery
-          </p>
+          <span className="inline-flex rounded-full border border-[#d4af37]/40 bg-white px-5 py-2 text-sm font-extrabold uppercase tracking-[0.22em] text-[#9a741f] shadow-sm">
+            Hajj 2027
+          </span>
 
-          <h2 className="mt-4 text-4xl font-black sm:text-5xl lg:text-6xl">
-            Hajj Journey & Facilities
+          <h2 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
+            Premium Hajj Packages
           </h2>
 
-          <p className="mx-auto mt-5 max-w-2xl leading-8 text-black/60">
-            Explore our Hajj packages, training sessions, hotels, Azizia
-            accommodation, Mashair facilities and Ziyarat.
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-black/60 sm:text-lg">
+            Select your preferred package, view complete pricing, download the
+            original flyer or book directly through WhatsApp.
           </p>
         </div>
 
-        <div className="mt-10 flex flex-wrap justify-center gap-3">
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => setSelectedCategory(category)}
-              className={`rounded-full px-5 py-2.5 text-sm font-bold transition ${
-                selectedCategory === category
-                  ? "bg-[#0b5d3b] text-white shadow-lg"
-                  : "border border-[#d4af37]/30 bg-white text-[#082017] hover:border-[#d4af37] hover:bg-[#fff8e7]"
-              }`}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
+        <div className="mt-14 grid items-start gap-8 lg:grid-cols-2">
+          {HAJJ_PACKAGES.map((pkg) => {
+            const whatsappMessage = createWhatsAppMessage(pkg);
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredGallery.map((item) => (
-            <article
-              key={item.id}
-              className="group overflow-hidden rounded-[1.7rem] border border-[#d4af37]/20 bg-white shadow-[0_14px_40px_rgba(8,32,23,0.10)] transition duration-300 hover:-translate-y-2 hover:shadow-[0_22px_60px_rgba(8,32,23,0.16)]"
-            >
-              <div className="relative h-[300px] overflow-hidden bg-[#eae5d9]">
-                <Image
-                  src={item.src}
-                  alt={item.title}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                  className="object-cover transition duration-500 group-hover:scale-105"
-                />
+            const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+              whatsappMessage
+            )}`;
 
-                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-transparent" />
+            return (
+              <article
+                key={pkg.id}
+                className="group overflow-hidden rounded-[2rem] border border-[#d4af37]/25 bg-white shadow-[0_18px_60px_rgba(8,32,23,0.12)] transition duration-500 hover:-translate-y-2 hover:shadow-[0_26px_80px_rgba(8,32,23,0.18)]"
+              >
+                <div className="relative aspect-[4/5] overflow-hidden bg-[#eee9dd]">
+                  <Image
+                    src={pkg.image}
+                    alt={`${pkg.title} flyer`}
+                    fill
+                    unoptimized
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    className="object-contain transition duration-500 group-hover:scale-[1.015]"
+                    priority={pkg.id === 1}
+                  />
 
-                <span className="absolute left-4 top-4 rounded-full bg-[#d4af37] px-4 py-2 text-xs font-black text-[#082017] shadow-lg">
-                  {item.category}
-                </span>
+                  <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-5">
+                    <span className="rounded-full bg-[#d4af37] px-4 py-2 text-sm font-black text-[#082017] shadow-lg">
+                      {pkg.duration}
+                    </span>
 
-                <div className="absolute inset-x-0 bottom-0 p-5">
-                  <h3 className="text-xl font-black text-white">
-                    {item.title}
-                  </h3>
+                    <span className="max-w-[68%] rounded-full bg-[#082017]/90 px-4 py-2 text-right text-xs font-bold text-white shadow-lg backdrop-blur sm:text-sm">
+                      {pkg.badge}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3 p-5">
-                <a
-                  href={item.src}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center rounded-full bg-[#0b5d3b] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#083f2a]"
-                >
-                  View Image
-                </a>
+                <div className="p-6 sm:p-8">
+                  <h3 className="text-2xl font-black text-[#0b5d3b] sm:text-3xl">
+                    {pkg.title}
+                  </h3>
 
-                <a
-                  href={item.src}
-                  download
-                  className="flex items-center justify-center rounded-full border-2 border-[#d4af37] px-4 py-3 text-sm font-bold text-[#8a671b] transition hover:bg-[#fff7df]"
-                >
-                  Download
-                </a>
-              </div>
-            </article>
-          ))}
+                  <p className="mt-3 text-xl font-extrabold text-[#a67d20]">
+                    {pkg.priceLabel}
+                  </p>
+
+                  {pkg.prices && (
+                    <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                      {pkg.prices.map((price) => (
+                        <div
+                          key={price.room}
+                          className="rounded-2xl border border-[#d4af37]/25 bg-[#fbf8f0] p-4 text-center"
+                        >
+                          <p className="text-sm font-black uppercase tracking-wide text-[#0b5d3b]">
+                            {price.room}
+                          </p>
+
+                          <p className="mt-2 text-lg font-black text-[#082017]">
+                            PKR {price.pkr}
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-black/55">
+                            USD {price.usd}
+                          </p>
+
+                          {price.extra && (
+                            <p className="mt-3 text-xs leading-5 text-black/55">
+                              {price.extra}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-7 rounded-3xl border border-[#0b5d3b]/10 bg-[#f7faf8] p-5 sm:p-6">
+                    <h4 className="text-lg font-black text-[#0b5d3b]">
+                      {pkg.detailsTitle}
+                    </h4>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {pkg.details.map((detail) => (
+                        <div key={detail} className="flex items-start gap-3">
+                          <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0b5d3b] text-[11px] font-black text-white">
+                            ✓
+                          </span>
+
+                          <p className="text-sm leading-6 text-black/65">
+                            {detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {pkg.itinerary && (
+                    <details className="mt-5 rounded-3xl border border-[#d4af37]/25 bg-[#fffaf0] p-5 open:shadow-sm">
+                      <summary className="cursor-pointer list-none font-black text-[#8a671b]">
+                        View Tentative Travel Itinerary
+                      </summary>
+
+                      <div className="mt-4 space-y-3">
+                        {pkg.itinerary.map((item) => (
+                          <p
+                            key={item}
+                            className="border-l-2 border-[#d4af37] pl-3 text-sm leading-6 text-black/65"
+                          >
+                            {item}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  <div className="mt-7 grid gap-3 sm:grid-cols-3">
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center rounded-full bg-[#0b5d3b] px-5 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-[#083f2a]"
+                    >
+                      Book Now
+                    </a>
+
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center rounded-full bg-[#25D366] px-5 py-3.5 text-sm font-black text-white shadow-lg transition hover:brightness-95"
+                    >
+                      WhatsApp
+                    </a>
+
+                    <a
+                      href={pkg.image}
+                      download={pkg.downloadName}
+                      className="inline-flex items-center justify-center rounded-full border-2 border-[#d4af37] bg-white px-5 py-3.5 text-sm font-black text-[#8a671b] transition hover:bg-[#fff7df]"
+                    >
+                      Download Flyer
+                    </a>
+                  </div>
+
+                  <p className="mt-5 text-center text-xs leading-5 text-black/45">
+                    Prices and itinerary are subject to final confirmation. Any
+                    increase in Mashair or Saudi government charges will be
+                    payable by the Haji.
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>
