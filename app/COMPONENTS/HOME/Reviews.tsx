@@ -2,118 +2,120 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type ReviewSource = "Google" | "Website";
-
 type Review = {
   id: number;
   name: string;
-  rating: number;
-  comment: string;
-  date: string;
+  city: string;
   packageName: string;
-  location: string;
+  rating: number;
+  message: string;
+  date: string;
+  source: "Google" | "Website";
   verified: boolean;
-  source: ReviewSource;
 };
 
 /*
-  IMPORTANT:
-
-  Neeche apni asli Google Business Review link paste karein.
-
-  Google Business Profile kholo:
-  Ask for reviews → Copy review link
-
-  Phir copied link ko neeche quotes ke andar paste karein.
+  Apni Google Business Profile review link yahan paste karein.
+  Google Business Profile > Ask for reviews > Copy link
 */
 const GOOGLE_REVIEW_URL =
   "https://search.google.com/local/writereview?placeid=YOUR_GOOGLE_PLACE_ID";
 
 /*
-  Sirf verified aur real customer reviews yahan add karein.
-
-  Isi format mein 30 ya us se zyada reviews add kiye ja sakte hain:
-
+  Yahan sirf apne asli customer reviews add karein.
+  Isi format mein 30 ya us se zyada reviews add ho sakte hain.
+*/
+const INITIAL_REVIEWS: Review[] = [
   {
     id: 1,
     name: "Customer Name",
-    rating: 5,
-    comment: "Customer ka original review...",
-    date: "18 July 2026",
+    city: "Faisalabad",
     packageName: "21 Days Premium Hajj",
-    location: "Faisalabad",
-    verified: true,
+    rating: 5,
+    message: "Apne asli customer ka review yahan paste karein.",
+    date: "18 July 2026",
     source: "Google",
+    verified: true,
   },
-*/
+];
 
-const INITIAL_REVIEWS: Review[] = [];
-
-function StarRating({
+function Stars({
   rating,
-  size = "text-lg",
+  interactive = false,
+  onChange,
 }: {
   rating: number;
-  size?: string;
+  interactive?: boolean;
+  onChange?: (rating: number) => void;
 }) {
   return (
-    <div
-      className={`flex items-center gap-1 ${size}`}
-      aria-label={`${rating} out of 5 stars`}
-    >
-      {[1, 2, 3, 4, 5].map((star) => (
-        <span
-          key={star}
-          className={star <= rating ? "text-[#fbbc04]" : "text-black/15"}
-        >
-          ★
-        </span>
-      ))}
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) =>
+        interactive ? (
+          <button
+            key={star}
+            type="button"
+            onClick={() => onChange?.(star)}
+            aria-label={`${star} star rating`}
+            className={`text-3xl transition hover:scale-110 ${
+              star <= rating ? "text-[#fbbc04]" : "text-black/15"
+            }`}
+          >
+            ★
+          </button>
+        ) : (
+          <span
+            key={star}
+            className={`text-lg ${
+              star <= rating ? "text-[#fbbc04]" : "text-black/15"
+            }`}
+          >
+            ★
+          </span>
+        )
+      )}
     </div>
   );
 }
 
 export default function Reviews() {
   const [reviews, setReviews] = useState<Review[]>(INITIAL_REVIEWS);
-  const [visibleReviews, setVisibleReviews] = useState(6);
-  const [selectedRating, setSelectedRating] = useState("All");
+  const [visibleCount, setVisibleCount] = useState(6);
+  const [ratingFilter, setRatingFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [message, setMessage] = useState("");
+  const [formMessage, setFormMessage] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
-    location: "",
+    city: "",
     packageName: "",
     rating: 5,
-    comment: "",
+    message: "",
   });
 
   useEffect(() => {
-    const savedReviews = localStorage.getItem(
-      "makki-madni-website-reviews"
-    );
+    const saved = localStorage.getItem("makki-madni-reviews");
 
-    if (!savedReviews) return;
+    if (!saved) return;
 
     try {
-      const parsedReviews: Review[] = JSON.parse(savedReviews);
-
-      setReviews([...parsedReviews, ...INITIAL_REVIEWS]);
+      const websiteReviews: Review[] = JSON.parse(saved);
+      setReviews([...websiteReviews, ...INITIAL_REVIEWS]);
     } catch {
-      console.error("Saved reviews could not be loaded.");
+      console.error("Reviews could not be loaded.");
     }
   }, []);
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return 0;
 
-    const totalRating = reviews.reduce(
-      (total, review) => total + review.rating,
+    const total = reviews.reduce(
+      (sum, review) => sum + review.rating,
       0
     );
 
-    return Number((totalRating / reviews.length).toFixed(1));
+    return Number((total / reviews.length).toFixed(1));
   }, [reviews]);
 
   const ratingSummary = useMemo(() => {
@@ -136,76 +138,76 @@ export default function Reviews() {
   }, [reviews]);
 
   const filteredReviews = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const keyword = search.toLowerCase().trim();
 
     return reviews.filter((review) => {
       const ratingMatches =
-        selectedRating === "All" ||
-        review.rating === Number(selectedRating);
+        ratingFilter === "All" ||
+        review.rating === Number(ratingFilter);
 
       const searchMatches =
-        normalizedSearch === "" ||
-        review.name.toLowerCase().includes(normalizedSearch) ||
-        review.comment.toLowerCase().includes(normalizedSearch) ||
-        review.packageName.toLowerCase().includes(normalizedSearch) ||
-        review.location.toLowerCase().includes(normalizedSearch);
+        keyword === "" ||
+        review.name.toLowerCase().includes(keyword) ||
+        review.city.toLowerCase().includes(keyword) ||
+        review.packageName.toLowerCase().includes(keyword) ||
+        review.message.toLowerCase().includes(keyword);
 
       return ratingMatches && searchMatches;
     });
-  }, [reviews, selectedRating, search]);
+  }, [reviews, ratingFilter, search]);
 
-  function handleReviewSubmit(event: FormEvent<HTMLFormElement>) {
+  function submitReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!formData.name.trim()) {
-      setMessage("Please enter your name.");
+      setFormMessage("Please enter your name.");
       return;
     }
 
-    if (formData.comment.trim().length < 20) {
-      setMessage("Please write a review of at least 20 characters.");
+    if (formData.message.trim().length < 20) {
+      setFormMessage(
+        "Please write a review of at least 20 characters."
+      );
       return;
     }
 
     const newReview: Review = {
       id: Date.now(),
       name: formData.name.trim(),
+      city: formData.city.trim() || "Pakistan",
+      packageName:
+        formData.packageName || "Hajj & Umrah Services",
       rating: formData.rating,
-      comment: formData.comment.trim(),
+      message: formData.message.trim(),
       date: new Date().toLocaleDateString("en-GB", {
         day: "numeric",
         month: "long",
         year: "numeric",
       }),
-      packageName:
-        formData.packageName.trim() || "Hajj & Umrah Services",
-      location: formData.location.trim() || "Pakistan",
-      verified: false,
       source: "Website",
+      verified: false,
     };
 
-    let previouslySavedReviews: Review[] = [];
+    let storedReviews: Review[] = [];
 
-    const storedReviews = localStorage.getItem(
-      "makki-madni-website-reviews"
-    );
+    const saved = localStorage.getItem("makki-madni-reviews");
 
-    if (storedReviews) {
+    if (saved) {
       try {
-        previouslySavedReviews = JSON.parse(storedReviews);
+        storedReviews = JSON.parse(saved);
       } catch {
-        previouslySavedReviews = [];
+        storedReviews = [];
       }
     }
 
-    const updatedSavedReviews = [
+    const updatedStoredReviews = [
       newReview,
-      ...previouslySavedReviews,
+      ...storedReviews,
     ];
 
     localStorage.setItem(
-      "makki-madni-website-reviews",
-      JSON.stringify(updatedSavedReviews)
+      "makki-madni-reviews",
+      JSON.stringify(updatedStoredReviews)
     );
 
     setReviews((currentReviews) => [
@@ -215,21 +217,20 @@ export default function Reviews() {
 
     setFormData({
       name: "",
-      location: "",
+      city: "",
       packageName: "",
       rating: 5,
-      comment: "",
+      message: "",
     });
 
-    setVisibleReviews(6);
-
-    setMessage(
-      "Thank you. Your review has been added successfully."
+    setVisibleCount(6);
+    setFormMessage(
+      "Thank you. Your review has been submitted successfully."
     );
 
     setTimeout(() => {
-      setMessage("");
       setShowForm(false);
+      setFormMessage("");
     }, 1800);
   }
 
@@ -238,7 +239,7 @@ export default function Reviews() {
       id="reviews"
       className="relative overflow-hidden bg-[#f8f5ef] px-4 py-20 text-[#082017] sm:px-6 lg:px-8 lg:py-28"
     >
-      <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_12%_18%,rgba(212,175,55,.20),transparent_28%),radial-gradient(circle_at_88%_28%,rgba(11,93,59,.13),transparent_30%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_10%_15%,rgba(212,175,55,.18),transparent_28%),radial-gradient(circle_at_90%_30%,rgba(11,93,59,.12),transparent_30%)]" />
 
       <div className="relative mx-auto max-w-7xl">
         {/* Heading */}
@@ -252,16 +253,16 @@ export default function Reviews() {
           </h2>
 
           <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-black/60 sm:text-lg">
-            Read genuine experiences shared by pilgrims and families
-            who travelled with BR. Makki Madni Hajj & Umrah Services.
+            Read customer experiences and share your feedback
+            about BR. Makki Madni Hajj & Umrah Services.
           </p>
         </div>
 
-        {/* Rating Summary */}
+        {/* Review Overview */}
         <div className="mt-12 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
           <div className="rounded-[2rem] border border-[#d4af37]/20 bg-white p-6 shadow-xl sm:p-8">
-            <div className="flex flex-col items-center text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5">
+            <div className="text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5">
                 <span className="text-3xl font-black text-[#4285f4]">
                   G
                 </span>
@@ -271,14 +272,13 @@ export default function Reviews() {
                 Customer Rating
               </p>
 
-              <p className="mt-2 text-6xl font-black text-[#082017]">
+              <p className="mt-2 text-6xl font-black">
                 {reviews.length > 0 ? averageRating : "—"}
               </p>
 
-              <StarRating
-                rating={Math.round(averageRating)}
-                size="text-2xl"
-              />
+              <div className="mt-2 flex justify-center">
+                <Stars rating={Math.round(averageRating)} />
+              </div>
 
               <p className="mt-3 text-sm text-black/50">
                 Based on {reviews.length} customer reviews
@@ -289,7 +289,7 @@ export default function Reviews() {
               {ratingSummary.map((item) => (
                 <div
                   key={item.rating}
-                  className="grid grid-cols-[38px_1fr_42px] items-center gap-3"
+                  className="grid grid-cols-[40px_1fr_40px] items-center gap-3"
                 >
                   <span className="text-sm font-bold">
                     {item.rating} ★
@@ -297,7 +297,7 @@ export default function Reviews() {
 
                   <div className="h-2 overflow-hidden rounded-full bg-black/10">
                     <div
-                      className="h-full rounded-full bg-[#fbbc04] transition-all"
+                      className="h-full rounded-full bg-[#fbbc04]"
                       style={{
                         width: `${item.percentage}%`,
                       }}
@@ -324,21 +324,21 @@ export default function Reviews() {
                 href={GOOGLE_REVIEW_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-full border-2 border-[#d4af37] bg-white px-5 py-3.5 text-center text-sm font-black text-[#8a671b] transition hover:bg-[#fff7df]"
+                className="rounded-full border-2 border-[#d4af37] px-5 py-3.5 text-center text-sm font-black text-[#8a671b] transition hover:bg-[#fff7df]"
               >
                 Write a Google Review
               </a>
             </div>
           </div>
 
-          {/* Search and Filters */}
+          {/* Search */}
           <div className="rounded-[2rem] border border-[#d4af37]/20 bg-white p-6 shadow-xl sm:p-8">
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#b28a2e]">
-              Find Reviews
+              Customer Experiences
             </p>
 
             <h3 className="mt-2 text-3xl font-black">
-              Customer Experiences
+              Find Customer Reviews
             </h3>
 
             <p className="mt-3 leading-7 text-black/55">
@@ -352,17 +352,17 @@ export default function Reviews() {
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value);
-                  setVisibleReviews(6);
+                  setVisibleCount(6);
                 }}
-                placeholder="Search customer reviews..."
-                className="rounded-full border border-black/10 bg-[#f8f5ef] px-5 py-3.5 text-sm outline-none transition focus:border-[#0b5d3b]"
+                placeholder="Search reviews..."
+                className="rounded-full border border-black/10 bg-[#f8f5ef] px-5 py-3.5 text-sm outline-none focus:border-[#0b5d3b]"
               />
 
               <select
-                value={selectedRating}
+                value={ratingFilter}
                 onChange={(event) => {
-                  setSelectedRating(event.target.value);
-                  setVisibleReviews(6);
+                  setRatingFilter(event.target.value);
+                  setVisibleCount(6);
                 }}
                 className="rounded-full border border-black/10 bg-[#f8f5ef] px-5 py-3.5 text-sm font-bold outline-none focus:border-[#0b5d3b]"
               >
@@ -377,13 +377,13 @@ export default function Reviews() {
 
             <div className="mt-7 rounded-3xl bg-[#f7faf8] p-5">
               <p className="font-black text-[#0b5d3b]">
-                Showing Reviews
+                Review Results
               </p>
 
-              <p className="mt-2 text-sm leading-6 text-black/55">
+              <p className="mt-2 text-sm text-black/55">
                 Showing{" "}
                 {Math.min(
-                  visibleReviews,
+                  visibleCount,
                   filteredReviews.length
                 )}{" "}
                 of {filteredReviews.length} reviews.
@@ -396,7 +396,7 @@ export default function Reviews() {
         {filteredReviews.length > 0 ? (
           <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredReviews
-              .slice(0, visibleReviews)
+              .slice(0, visibleCount)
               .map((review) => (
                 <article
                   key={review.id}
@@ -409,12 +409,12 @@ export default function Reviews() {
                       </div>
 
                       <div>
-                        <h3 className="font-black text-[#082017]">
+                        <h3 className="font-black">
                           {review.name}
                         </h3>
 
                         <p className="mt-1 text-xs text-black/45">
-                          {review.location}
+                          {review.city}
                         </p>
                       </div>
                     </div>
@@ -433,7 +433,7 @@ export default function Reviews() {
                   </div>
 
                   <div className="mt-5 flex items-center justify-between gap-3">
-                    <StarRating rating={review.rating} />
+                    <Stars rating={review.rating} />
 
                     <span className="text-xs text-black/40">
                       {review.date}
@@ -441,7 +441,7 @@ export default function Reviews() {
                   </div>
 
                   <p className="mt-5 flex-1 text-sm leading-7 text-black/65">
-                    “{review.comment}”
+                    “{review.message}”
                   </p>
 
                   <div className="mt-5 border-t border-black/5 pt-4">
@@ -449,7 +449,7 @@ export default function Reviews() {
                       {review.packageName}
                     </p>
 
-                    <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="mt-3 flex items-center justify-between">
                       <span className="text-xs text-black/40">
                         {review.source === "Google"
                           ? "Google Review"
@@ -457,7 +457,7 @@ export default function Reviews() {
                       </span>
 
                       {review.verified && (
-                        <span className="rounded-full bg-[#e8f5ed] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-[#0b5d3b]">
+                        <span className="rounded-full bg-[#e8f5ed] px-3 py-1 text-[10px] font-black uppercase text-[#0b5d3b]">
                           Verified
                         </span>
                       )}
@@ -467,38 +467,23 @@ export default function Reviews() {
               ))}
           </div>
         ) : (
-          <div className="mt-8 rounded-[2rem] border border-[#d4af37]/20 bg-white p-10 text-center shadow-lg">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#f8f5ef] text-3xl">
-              ★
-            </div>
-
-            <h3 className="mt-5 text-2xl font-black">
-              Customer Reviews
+          <div className="mt-8 rounded-[2rem] bg-white p-10 text-center shadow-lg">
+            <h3 className="text-2xl font-black">
+              No Reviews Found
             </h3>
 
-            <p className="mx-auto mt-3 max-w-xl leading-7 text-black/55">
-              No reviews are available for this filter yet. Be the
-              first customer to share your experience.
+            <p className="mt-3 text-black/55">
+              Try another search or submit your experience.
             </p>
-
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="mt-6 rounded-full bg-[#0b5d3b] px-7 py-3.5 text-sm font-black text-white shadow-lg"
-            >
-              Submit First Review
-            </button>
           </div>
         )}
 
-        {visibleReviews < filteredReviews.length && (
+        {visibleCount < filteredReviews.length && (
           <div className="mt-10 text-center">
             <button
               type="button"
               onClick={() =>
-                setVisibleReviews(
-                  (currentValue) => currentValue + 6
-                )
+                setVisibleCount((current) => current + 6)
               }
               className="rounded-full bg-[#082017] px-8 py-4 text-sm font-black text-white shadow-lg transition hover:bg-[#0b5d3b]"
             >
@@ -506,54 +491,19 @@ export default function Reviews() {
             </button>
           </div>
         )}
-
-        {/* Bottom CTA */}
-        <div className="mt-14 rounded-[2rem] bg-[#082017] p-7 text-center text-white shadow-2xl sm:p-10">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#d4af37]">
-            Travelled With Us?
-          </p>
-
-          <h3 className="mt-3 text-3xl font-black">
-            Share Your Hajj Experience
-          </h3>
-
-          <p className="mx-auto mt-4 max-w-2xl leading-7 text-white/70">
-            Your feedback helps other families select reliable Hajj
-            services and helps us improve our arrangements.
-          </p>
-
-          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="rounded-full bg-[#d4af37] px-7 py-3.5 text-sm font-black text-[#082017] transition hover:brightness-105"
-            >
-              Submit Website Review
-            </button>
-
-            <a
-              href={GOOGLE_REVIEW_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full border border-white/30 px-7 py-3.5 text-sm font-black text-white transition hover:bg-white hover:text-[#082017]"
-            >
-              Review Us on Google
-            </a>
-          </div>
-        </div>
       </div>
 
-      {/* Review Form Modal */}
+      {/* Review Form */}
       {showForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
           <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl sm:p-8">
-            <div className="flex items-start justify-between gap-5">
+            <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#b28a2e]">
                   Customer Feedback
                 </p>
 
-                <h3 className="mt-2 text-3xl font-black text-[#082017]">
+                <h3 className="mt-2 text-3xl font-black">
                   Share Your Experience
                 </h3>
               </div>
@@ -562,27 +512,25 @@ export default function Reviews() {
                 type="button"
                 onClick={() => {
                   setShowForm(false);
-                  setMessage("");
+                  setFormMessage("");
                 }}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/5 text-xl font-black text-black/60 transition hover:bg-black/10"
-                aria-label="Close review form"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 text-xl font-black"
               >
                 ×
               </button>
             </div>
 
             <form
-              onSubmit={handleReviewSubmit}
+              onSubmit={submitReview}
               className="mt-7 space-y-5"
             >
               <div className="grid gap-5 sm:grid-cols-2">
-                <label className="block">
+                <label>
                   <span className="text-sm font-bold">
                     Your Name *
                   </span>
 
                   <input
-                    type="text"
                     required
                     value={formData.name}
                     onChange={(event) =>
@@ -591,27 +539,26 @@ export default function Reviews() {
                         name: event.target.value,
                       })
                     }
-                    placeholder="Enter your full name"
                     className="mt-2 w-full rounded-2xl border border-black/10 bg-[#f8f5ef] px-4 py-3 outline-none focus:border-[#0b5d3b]"
+                    placeholder="Enter your name"
                   />
                 </label>
 
-                <label className="block">
+                <label>
                   <span className="text-sm font-bold">
                     City
                   </span>
 
                   <input
-                    type="text"
-                    value={formData.location}
+                    value={formData.city}
                     onChange={(event) =>
                       setFormData({
                         ...formData,
-                        location: event.target.value,
+                        city: event.target.value,
                       })
                     }
-                    placeholder="Faisalabad"
                     className="mt-2 w-full rounded-2xl border border-black/10 bg-[#f8f5ef] px-4 py-3 outline-none focus:border-[#0b5d3b]"
+                    placeholder="Faisalabad"
                   />
                 </label>
               </div>
@@ -629,9 +576,9 @@ export default function Reviews() {
                       packageName: event.target.value,
                     })
                   }
-                  className="mt-2 w-full rounded-2xl border border-black/10 bg-[#f8f5ef] px-4 py-3 outline-none focus:border-[#0b5d3b]"
+                  className="mt-2 w-full rounded-2xl border border-black/10 bg-[#f8f5ef] px-4 py-3 outline-none"
                 >
-                  <option value="">Select your package</option>
+                  <option value="">Select package</option>
                   <option value="14 Days Premium Hajj">
                     14 Days Premium Hajj
                   </option>
@@ -644,9 +591,6 @@ export default function Reviews() {
                   <option value="Umrah Services">
                     Umrah Services
                   </option>
-                  <option value="Other Hajj Services">
-                    Other Hajj Services
-                  </option>
                 </select>
               </label>
 
@@ -655,27 +599,17 @@ export default function Reviews() {
                   Your Rating *
                 </p>
 
-                <div className="mt-3 flex gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          rating: star,
-                        })
-                      }
-                      className={`text-4xl transition hover:scale-110 ${
-                        star <= formData.rating
-                          ? "text-[#fbbc04]"
-                          : "text-black/15"
-                      }`}
-                      aria-label={`${star} star rating`}
-                    >
-                      ★
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <Stars
+                    rating={formData.rating}
+                    interactive
+                    onChange={(rating) =>
+                      setFormData({
+                        ...formData,
+                        rating,
+                      })
+                    }
+                  />
                 </div>
               </div>
 
@@ -687,35 +621,35 @@ export default function Reviews() {
                 <textarea
                   required
                   rows={5}
-                  value={formData.comment}
+                  value={formData.message}
                   onChange={(event) =>
                     setFormData({
                       ...formData,
-                      comment: event.target.value,
+                      message: event.target.value,
                     })
                   }
-                  placeholder="Tell us about your Hajj or Umrah experience..."
                   className="mt-2 w-full resize-none rounded-2xl border border-black/10 bg-[#f8f5ef] px-4 py-3 outline-none focus:border-[#0b5d3b]"
+                  placeholder="Tell us about your experience..."
                 />
               </label>
 
-              {message && (
+              {formMessage && (
                 <p className="rounded-2xl bg-[#e8f5ed] px-4 py-3 text-sm font-bold text-[#0b5d3b]">
-                  {message}
+                  {formMessage}
                 </p>
               )}
 
               <button
                 type="submit"
-                className="w-full rounded-full bg-[#0b5d3b] px-6 py-4 text-sm font-black text-white shadow-lg transition hover:bg-[#083f2a]"
+                className="w-full rounded-full bg-[#0b5d3b] px-6 py-4 text-sm font-black text-white shadow-lg hover:bg-[#083f2a]"
               >
                 Submit Review
               </button>
 
               <p className="text-center text-xs leading-5 text-black/40">
-                Website reviews are saved in the visitor&apos;s
-                browser. For a permanent public review, please use
-                the Google Review button.
+                Website reviews are stored in the visitor&apos;s
+                browser. Permanent public feedback should be
+                submitted using the Google Review button.
               </p>
             </form>
           </div>
