@@ -21,7 +21,7 @@ About Us
 </p>
 
 <h2 className="text-5xl font-bold mt-4 text-[#0B5D3B]">
-20+ Years of Trusted Experience
+25+ Years of Trusted Experience
 </h2>
 
 <p className="mt-6 text-gray-600 leading-8">

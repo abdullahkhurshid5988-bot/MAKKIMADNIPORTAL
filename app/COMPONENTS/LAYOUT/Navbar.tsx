@@ -5,7 +5,7 @@ return (
 
 <div className="flex items-center gap-4">
 <img
-src="/images/logo.jpeg"
+src="/logo.jpg"
 alt="Logo"
 className="h-16 w-16 object-contain"
 />
