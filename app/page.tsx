@@ -149,7 +149,17 @@ export default function Home() {
 
       setMessage({
         type: "success",
-        text: `Welcome ${profile.full_name || "back"}. Login successful hai. Dashboard next step mein connect hoga.`,
+        text: `Welcome ${profile.full_name || "back"}. Dashboard open ho raha hai...`,
+      });
+
+      if (profile.role === "customer") {
+        window.location.assign("/customer/dashboard");
+        return;
+      }
+
+      setMessage({
+        type: "info",
+        text: `${profile.role} dashboard aglay module mein connect hoga.`,
       });
     } catch {
       setMessage({
@@ -234,8 +244,11 @@ export default function Home() {
       if (data.session) {
         setMessage({
           type: "success",
-          text: "Customer account successfully create ho gaya aur login bhi ho gaya.",
+          text: "Customer account create ho gaya. Dashboard open ho raha hai...",
         });
+
+        window.location.assign("/customer/dashboard");
+        return;
       } else {
         setMessage({
           type: "success",
@@ -621,7 +634,7 @@ export default function Home() {
                         name="mobile"
                         required
                         autoComplete="tel"
-                        placeholder="03006975181"
+                        placeholder="03XX XXXXXXX"
                         className="w-full rounded-2xl border border-black/10 bg-[#fbfaf7] px-5 py-4 text-sm outline-none placeholder:text-black/25 focus:border-[#b18a48] focus:bg-white"
                       />
                     </label>
