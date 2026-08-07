@@ -12,6 +12,34 @@ type Profile = {
   account_status: string | null;
 };
 
+type BookingStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "confirmed"
+  | "cancelled";
+
+type PaymentStatus =
+  | "pending"
+  | "partially_paid"
+  | "paid"
+  | "refunded";
+
+type Booking = {
+  id: string;
+  booking_type: "hajj" | "umrah" | "flight";
+  package_name: string | null;
+  travelers: number;
+  travel_date: string | null;
+  status: BookingStatus;
+  payment_status: PaymentStatus;
+  total_amount: number | string;
+  paid_amount: number | string;
+  currency: string;
+  created_at: string;
+};
+
 const navigation = [
   { label: "Overview", icon: "◫", active: true },
   { label: "My Bookings", icon: "✦" },
@@ -28,21 +56,25 @@ const quickActions = [
     title: "Book Hajj Package",
     description: "Explore premium Hajj 2027 plans.",
     icon: "◆",
+    route: "/customer/booking/new",
   },
   {
     title: "Book Umrah",
     description: "Create a family or group journey.",
     icon: "◈",
+    route: "/customer/booking/new",
   },
   {
     title: "Search Flights",
-    description: "Compare live international fares.",
+    description: "Submit an international flight request.",
     icon: "✈",
+    route: "/customer/booking/new",
   },
   {
-    title: "Upload Documents",
-    description: "Add passport, CNIC and photos.",
+    title: "View My Bookings",
+    description: "Track requests, payments and status.",
     icon: "▤",
+    route: "/customer/booking",
   },
 ];
 
@@ -53,15 +85,57 @@ const documents = [
   { name: "Vaccination Certificate", status: "Not uploaded" },
 ];
 
+const statusProgress: Record<BookingStatus, number> = {
+  draft: 5,
+  submitted: 20,
+  under_review: 40,
+  approved: 65,
+  confirmed: 100,
+  cancelled: 0,
+};
+
+function formatLabel(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "Date pending";
+
+  return new Intl.DateTimeFormat("en-PK", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatMoney(
+  amount: number | string,
+  currency: string
+) {
+  const numericAmount = Number(amount || 0);
+
+  if (numericAmount <= 0) return "0";
+
+  return new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: currency || "PKR",
+    maximumFractionDigits: 0,
+  }).format(numericAmount);
+}
+
 export default function CustomerDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadProfile() {
+    async function loadDashboard() {
       try {
         const supabase = createClient();
 
@@ -74,23 +148,50 @@ export default function CustomerDashboard() {
           return;
         }
 
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("full_name, email, mobile, role, account_status")
-          .eq("id", user.id)
-          .single();
+        const { data: profileData, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select(
+              "full_name, email, mobile, role, account_status"
+            )
+            .eq("id", user.id)
+            .single();
 
-        if (error || !data || data.role !== "customer") {
+        if (
+          profileError ||
+          !profileData ||
+          profileData.role !== "customer" ||
+          profileData.account_status !== "active"
+        ) {
           await supabase.auth.signOut();
           window.location.replace("/");
           return;
         }
 
-        if (mounted) {
-          setProfile(data);
+        const { data: bookingData, error: bookingError } =
+          await supabase
+            .from("bookings")
+            .select(
+              "id, booking_type, package_name, travelers, travel_date, status, payment_status, total_amount, paid_amount, currency, created_at"
+            )
+            .order("created_at", { ascending: false });
+
+        if (bookingError) {
+          throw bookingError;
         }
-      } catch {
-        window.location.replace("/");
+
+        if (mounted) {
+          setProfile(profileData);
+          setBookings((bookingData || []) as Booking[]);
+        }
+      } catch (error) {
+        if (mounted) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Dashboard data load nahi ho saka."
+          );
+        }
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -98,7 +199,7 @@ export default function CustomerDashboard() {
       }
     }
 
-    loadProfile();
+    loadDashboard();
 
     return () => {
       mounted = false;
@@ -116,6 +217,80 @@ export default function CustomerDashboard() {
       .map((part) => part.charAt(0).toUpperCase())
       .join("");
   }, [profile]);
+
+  const dashboardStats = useMemo(() => {
+    const activeBookings = bookings.filter(
+      (booking) =>
+        !["cancelled", "confirmed"].includes(booking.status)
+    );
+
+    const pendingPayments = bookings.filter(
+      (booking) =>
+        booking.payment_status === "pending" ||
+        booking.payment_status === "partially_paid"
+    );
+
+    const totalPendingAmount = pendingPayments.reduce(
+      (total, booking) => {
+        const bookingTotal = Number(booking.total_amount || 0);
+        const paid = Number(booking.paid_amount || 0);
+        return total + Math.max(0, bookingTotal - paid);
+      },
+      0
+    );
+
+    return {
+      activeBookings: activeBookings.length,
+      pendingPayments: pendingPayments.length,
+      totalPendingAmount,
+    };
+  }, [bookings]);
+
+  const latestBooking = bookings[0] || null;
+
+  const latestStatusText = latestBooking
+    ? formatLabel(latestBooking.status)
+    : "No active booking";
+
+  const latestProgress = latestBooking
+    ? statusProgress[latestBooking.status]
+    : 8;
+
+  const visaStatus = useMemo(() => {
+    if (!latestBooking) return "Not Started";
+
+    if (latestBooking.status === "confirmed") return "Confirmed";
+    if (latestBooking.status === "approved") return "Approved";
+    if (latestBooking.status === "under_review") {
+      return "Under Review";
+    }
+    if (latestBooking.status === "submitted") return "Submitted";
+    if (latestBooking.status === "cancelled") return "Cancelled";
+
+    return "Not Started";
+  }, [latestBooking]);
+
+  function handleNavigation(label: string) {
+    if (label === "Overview") {
+      window.location.assign("/customer/dashboard");
+      return;
+    }
+
+    if (label === "My Bookings") {
+      window.location.assign("/customer/booking");
+      return;
+    }
+
+    if (
+      label === "Live Flights" ||
+      label === "Hajj & Umrah"
+    ) {
+      window.location.assign("/customer/booking/new");
+      return;
+    }
+
+    setMobileMenuOpen(false);
+  }
 
   async function handleLogout() {
     const supabase = createClient();
@@ -171,15 +346,7 @@ export default function CustomerDashboard() {
               <button
                 key={item.label}
                 type="button"
-                onClick={() => {
-  if (item.label === "Overview") {
-    window.location.assign("/customer/dashboard");
-  }
-
-  if (item.label === "My Bookings") {
-    window.location.assign("/customer/booking");
-  }
-}}
+                onClick={() => handleNavigation(item.label)}
                 className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-sm font-bold transition ${
                   item.active
                     ? "bg-[#d8b66c] text-[#0f302c] shadow-lg"
@@ -188,7 +355,9 @@ export default function CustomerDashboard() {
               >
                 <span
                   className={`flex h-8 w-8 items-center justify-center rounded-xl text-sm ${
-                    item.active ? "bg-[#0f302c] text-[#eddba9]" : "bg-white/5"
+                    item.active
+                      ? "bg-[#0f302c] text-[#eddba9]"
+                      : "bg-white/5"
                   }`}
                 >
                   {item.icon}
@@ -203,14 +372,15 @@ export default function CustomerDashboard() {
               Need Assistance?
             </p>
             <p className="mt-3 text-xs leading-6 text-white/50">
-              Our Hajj, Umrah and ticketing team is available for your journey.
+              Our Hajj, Umrah and ticketing team is available for
+              your journey.
             </p>
-            <button
-              type="button"
-              className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-xs font-black text-[#0f302c]"
+            <a
+              href="tel:+923006975181"
+              className="mt-4 block w-full rounded-xl bg-white px-4 py-3 text-center text-xs font-black text-[#0f302c]"
             >
               Contact Support
-            </button>
+            </a>
           </div>
         </aside>
 
@@ -262,19 +432,7 @@ export default function CustomerDashboard() {
               <button
                 key={item.label}
                 type="button"
-                onClick={() => {
-  if (item.label === "Overview") {
-    window.location.assign("/customer/dashboard");
-    return;
-  }
-
-  if (item.label === "My Bookings") {
-    window.location.assign("/customer/booking");
-    return;
-  }
-
-  setMobileMenuOpen(false);
-}}
+                onClick={() => handleNavigation(item.label)}
                 className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold ${
                   item.active
                     ? "bg-[#d8b66c] text-[#0f302c]"
@@ -307,7 +465,8 @@ export default function CustomerDashboard() {
                     Customer Dashboard
                   </p>
                   <h1 className="mt-1 text-xl font-black sm:text-2xl">
-                    Assalam-o-Alaikum, {profile?.full_name || "Customer"}
+                    Assalam-o-Alaikum,{" "}
+                    {profile?.full_name || "Customer"}
                   </h1>
                 </div>
               </div>
@@ -346,6 +505,12 @@ export default function CustomerDashboard() {
           </header>
 
           <div className="space-y-7 px-4 py-6 sm:px-6 xl:px-10 xl:py-9">
+            {loadError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+                Dashboard data load nahi hua: {loadError}
+              </div>
+            )}
+
             {/* Luxury hero */}
             <section className="relative overflow-hidden rounded-[2.4rem] bg-[#123a35] p-6 text-white shadow-[0_30px_90px_rgba(22,55,49,0.22)] sm:p-8 xl:p-10">
               <Image
@@ -372,25 +537,33 @@ export default function CustomerDashboard() {
                   </h2>
 
                   <p className="mt-4 max-w-xl text-sm leading-7 text-white/60 sm:text-base">
-                    Book packages, compare flights, upload documents and track
-                    every important update from one secure portal.
+                    Book packages, compare flights, upload documents
+                    and track every important update from one secure
+                    portal.
                   </p>
 
                   <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-<button
-  type="button"
-  onClick={() =>
-    window.location.assign("/customer/booking/new")
-  }
-  className="rounded-2xl bg-[#d8b66c] px-6 py-4 text-sm font-black text-[#123a35] shadow-xl transition hover:-translate-y-1"
->
-  Start New Booking
-</button>
                     <button
                       type="button"
+                      onClick={() =>
+                        window.location.assign(
+                          "/customer/booking/new"
+                        )
+                      }
+                      className="rounded-2xl bg-[#d8b66c] px-6 py-4 text-sm font-black text-[#123a35] shadow-xl transition hover:-translate-y-1"
+                    >
+                      Start New Booking
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.location.assign(
+                          "/customer/booking"
+                        )
+                      }
                       className="rounded-2xl border border-white/20 bg-white/5 px-6 py-4 text-sm font-black text-white backdrop-blur-xl"
                     >
-                      Search Live Flights
+                      View My Bookings
                     </button>
                   </div>
                 </div>
@@ -402,41 +575,106 @@ export default function CustomerDashboard() {
                         Journey Status
                       </p>
                       <p className="mt-2 text-2xl font-black">
-                        No active booking
+                        {latestStatusText}
                       </p>
+                      {latestBooking && (
+                        <p className="mt-2 text-xs text-white/50">
+                          {latestBooking.package_name ||
+                            formatLabel(
+                              latestBooking.booking_type
+                            )}
+                        </p>
+                      )}
                     </div>
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-2xl">
-                      ✦
+                      {latestBooking?.booking_type === "flight"
+                        ? "✈"
+                        : latestBooking?.booking_type === "umrah"
+                          ? "◈"
+                          : "✦"}
                     </div>
                   </div>
 
                   <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full w-[8%] rounded-full bg-[#d8b66c]" />
+                    <div
+                      className="h-full rounded-full bg-[#d8b66c]"
+                      style={{ width: `${latestProgress}%` }}
+                    />
                   </div>
 
                   <div className="mt-3 flex justify-between text-[11px] text-white/45">
-                    <span>Account ready</span>
-                    <span>Choose a service</span>
+                    <span>
+                      {latestBooking
+                        ? `Travel: ${formatDate(
+                            latestBooking.travel_date
+                          )}`
+                        : "Account ready"}
+                    </span>
+                    <span>{latestProgress}%</span>
                   </div>
 
                   <button
                     type="button"
+                    onClick={() =>
+                      window.location.assign(
+                        latestBooking
+                          ? "/customer/booking"
+                          : "/customer/booking/new"
+                      )
+                    }
                     className="mt-6 flex w-full items-center justify-between rounded-xl bg-white px-4 py-3.5 text-sm font-black text-[#123a35]"
                   >
-                    Explore Hajj & Umrah
+                    {latestBooking
+                      ? "View Booking Details"
+                      : "Explore Hajj & Umrah"}
                     <span>→</span>
                   </button>
                 </div>
               </div>
             </section>
 
-            {/* Stats */}
+            {/* Real Stats */}
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                ["0", "Active Bookings", "No journey booked yet", "✦"],
-                ["PKR 0", "Pending Payment", "Your account is clear", "◉"],
-                ["0 / 4", "Documents Ready", "Upload required files", "▤"],
-                ["Not Started", "Visa Status", "Available after booking", "◎"],
+                [
+                  String(dashboardStats.activeBookings),
+                  "Active Bookings",
+                  bookings.length > 0
+                    ? `${bookings.length} total request${
+                        bookings.length === 1 ? "" : "s"
+                      }`
+                    : "No journey booked yet",
+                  "✦",
+                ],
+                [
+                  dashboardStats.totalPendingAmount > 0
+                    ? formatMoney(
+                        dashboardStats.totalPendingAmount,
+                        latestBooking?.currency || "PKR"
+                      )
+                    : String(dashboardStats.pendingPayments),
+                  "Pending Payment",
+                  dashboardStats.pendingPayments > 0
+                    ? `${dashboardStats.pendingPayments} booking payment pending`
+                    : "Your account is clear",
+                  "◉",
+                ],
+                [
+                  "0 / 4",
+                  "Documents Ready",
+                  "Document upload module is next",
+                  "▤",
+                ],
+                [
+                  visaStatus,
+                  "Visa Status",
+                  latestBooking
+                    ? `Based on latest ${formatLabel(
+                        latestBooking.booking_type
+                      )} request`
+                    : "Available after booking",
+                  "◎",
+                ],
               ].map(([value, label, note, icon]) => (
                 <article
                   key={label}
@@ -447,7 +685,9 @@ export default function CustomerDashboard() {
                       <p className="text-2xl font-black text-[#173f39]">
                         {value}
                       </p>
-                      <p className="mt-2 text-sm font-black">{label}</p>
+                      <p className="mt-2 text-sm font-black">
+                        {label}
+                      </p>
                     </div>
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f4eee0] text-lg text-[#9a7638]">
                       {icon}
@@ -475,9 +715,14 @@ export default function CustomerDashboard() {
                     </div>
                     <button
                       type="button"
+                      onClick={() =>
+                        window.location.assign(
+                          "/customer/booking"
+                        )
+                      }
                       className="text-left text-xs font-black text-[#8d6c35]"
                     >
-                      View all services →
+                      View all bookings →
                     </button>
                   </div>
 
@@ -486,6 +731,9 @@ export default function CustomerDashboard() {
                       <button
                         key={action.title}
                         type="button"
+                        onClick={() =>
+                          window.location.assign(action.route)
+                        }
                         className="group flex items-start gap-4 rounded-[1.5rem] border border-[#17302d]/10 bg-[#fbfaf7] p-5 text-left transition hover:-translate-y-1 hover:border-[#c3a361]/60 hover:bg-white hover:shadow-lg"
                       >
                         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#173f39] text-lg text-[#ecd99e]">
@@ -523,47 +771,94 @@ export default function CustomerDashboard() {
                   </div>
 
                   <div className="mt-6 space-y-4">
-                    {[
-                      [
-                        "Customer account created",
-                        "Your Makki Madni portal account is ready.",
-                        "Today",
-                      ],
-                      [
-                        "Profile secured",
-                        "Your information is protected through Supabase authentication.",
-                        "Today",
-                      ],
-                      [
-                        "Next recommended step",
-                        "Upload documents or start your first booking.",
-                        "Pending",
-                      ],
-                    ].map(([title, description, time], index) => (
-                      <div key={title} className="flex gap-4">
-                        <div className="flex flex-col items-center">
-                          <span
-                            className={`h-3 w-3 rounded-full ${
-                              index < 2 ? "bg-emerald-500" : "bg-[#d8b66c]"
-                            }`}
-                          />
-                          {index < 2 && (
+                    {latestBooking ? (
+                      <>
+                        <div className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span className="h-3 w-3 rounded-full bg-[#d8b66c]" />
                             <span className="mt-2 h-full w-px bg-[#17302d]/10" />
-                          )}
-                        </div>
-                        <div className="flex-1 pb-4">
-                          <div className="flex justify-between gap-3">
-                            <p className="text-sm font-black">{title}</p>
-                            <p className="text-[10px] text-[#17302d]/35">
-                              {time}
+                          </div>
+                          <div className="flex-1 pb-4">
+                            <div className="flex justify-between gap-3">
+                              <p className="text-sm font-black">
+                                Latest booking:{" "}
+                                {latestBooking.package_name ||
+                                  formatLabel(
+                                    latestBooking.booking_type
+                                  )}
+                              </p>
+                              <p className="text-[10px] text-[#17302d]/35">
+                                {formatLabel(latestBooking.status)}
+                              </p>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-[#17302d]/45">
+                              Reference{" "}
+                              {latestBooking.id
+                                .slice(0, 8)
+                                .toUpperCase()}{" "}
+                              • {latestBooking.travelers} traveler
+                              {latestBooking.travelers === 1
+                                ? ""
+                                : "s"}
                             </p>
                           </div>
-                          <p className="mt-1 text-xs leading-5 text-[#17302d]/45">
-                            {description}
-                          </p>
                         </div>
-                      </div>
-                    ))}
+
+                        <div className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                          </div>
+                          <div className="flex-1 pb-4">
+                            <div className="flex justify-between gap-3">
+                              <p className="text-sm font-black">
+                                Payment status
+                              </p>
+                              <p className="text-[10px] text-[#17302d]/35">
+                                {formatLabel(
+                                  latestBooking.payment_status
+                                )}
+                              </p>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-[#17302d]/45">
+                              Open My Bookings for complete request
+                              details.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                            <span className="mt-2 h-full w-px bg-[#17302d]/10" />
+                          </div>
+                          <div className="flex-1 pb-4">
+                            <p className="text-sm font-black">
+                              Customer account created
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-[#17302d]/45">
+                              Your Makki Madni portal account is ready.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span className="h-3 w-3 rounded-full bg-[#d8b66c]" />
+                          </div>
+                          <div className="flex-1 pb-4">
+                            <p className="text-sm font-black">
+                              Next recommended step
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-[#17302d]/45">
+                              Start your first Hajj, Umrah or flight
+                              request.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </section>
               </div>
@@ -592,13 +887,18 @@ export default function CustomerDashboard() {
                         className="flex items-center justify-between gap-3 rounded-2xl border border-[#17302d]/8 bg-[#fbfaf7] px-4 py-3.5"
                       >
                         <div>
-                          <p className="text-sm font-bold">{document.name}</p>
+                          <p className="text-sm font-bold">
+                            {document.name}
+                          </p>
                           <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">
                             {document.status}
                           </p>
                         </div>
                         <button
                           type="button"
+                          onClick={() =>
+                            window.location.assign("/customer/documents")
+                          }
                           className="rounded-xl bg-white px-3 py-2 text-[10px] font-black text-[#8d6c35] shadow-sm"
                         >
                           Upload
@@ -609,6 +909,9 @@ export default function CustomerDashboard() {
 
                   <button
                     type="button"
+                    onClick={() =>
+                      window.location.assign("/customer/documents")
+                    }
                     className="mt-5 w-full rounded-xl bg-[#173f39] px-4 py-3.5 text-sm font-black text-white"
                   >
                     Open Document Centre
@@ -623,8 +926,8 @@ export default function CustomerDashboard() {
                     Need help planning your journey?
                   </h3>
                   <p className="mt-3 text-xs leading-6 text-[#17302d]/55">
-                    Speak with our Hajj, Umrah, visa or air-ticketing team for
-                    professional guidance.
+                    Speak with our Hajj, Umrah, visa or
+                    air-ticketing team for professional guidance.
                   </p>
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     <a
