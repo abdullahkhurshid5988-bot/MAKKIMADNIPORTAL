@@ -157,6 +157,11 @@ export default function Home() {
         return;
       }
 
+      if (profile.role === "admin") {
+        window.location.assign("/admin/dashboard");
+        return;
+      }
+
       setMessage({
         type: "info",
         text: `${profile.role} dashboard aglay module mein connect hoga.`,
