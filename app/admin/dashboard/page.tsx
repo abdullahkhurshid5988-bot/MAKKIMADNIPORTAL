@@ -204,7 +204,7 @@ export default function AdminDashboard() {
 
   async function updateBooking(
     bookingId: string,
-    updates: Partial<Pick<Booking, "status" | "payment_status">>
+    updates: Partial<Pick<Booking, "status" | "payment_status" | "total_amount" | "paid_amount" | "currency">>
   ) {
     setUpdatingId(bookingId);
     setMessage("");
@@ -239,6 +239,55 @@ export default function AdminDashboard() {
     } finally {
       setUpdatingId(null);
     }
+  }
+
+  function editBookingField(
+    bookingId: string,
+    field: "total_amount" | "paid_amount" | "currency",
+    value: string
+  ) {
+    setBookings((current) =>
+      current.map((booking) =>
+        booking.id === bookingId
+          ? {
+              ...booking,
+              [field]: field === "currency" ? value.toUpperCase() : value,
+            }
+          : booking
+      )
+    );
+  }
+
+  async function saveQuotation(booking: Booking) {
+    const totalAmount = Number(booking.total_amount || 0);
+    const paidAmount = Number(booking.paid_amount || 0);
+    const currency = String(booking.currency || "PKR").trim().toUpperCase();
+
+    if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+      setMessage("Total amount valid number hona chahiye.");
+      return;
+    }
+
+    if (!Number.isFinite(paidAmount) || paidAmount < 0) {
+      setMessage("Paid amount valid number hona chahiye.");
+      return;
+    }
+
+    if (paidAmount > totalAmount && totalAmount > 0) {
+      setMessage("Paid amount total amount se zyada nahi ho sakta.");
+      return;
+    }
+
+    if (!currency) {
+      setMessage("Currency enter karein, jaise PKR ya USD.");
+      return;
+    }
+
+    await updateBooking(booking.id, {
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      currency,
+    });
   }
 
   async function handleLogout() {
@@ -425,47 +474,118 @@ export default function AdminDashboard() {
                       </p>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
-                        Booking Status
-                        <select
-                          value={booking.status}
-                          disabled={updatingId === booking.id}
-                          onChange={(event) =>
-                            updateBooking(booking.id, {
-                              status: event.target.value as BookingStatus,
-                            })
-                          }
-                          className="mt-2 block min-w-[180px] rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
-                        >
-                          {bookingStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {label(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                    <div className="w-full max-w-2xl space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                          Booking Status
+                          <select
+                            value={booking.status}
+                            disabled={updatingId === booking.id}
+                            onChange={(event) =>
+                              updateBooking(booking.id, {
+                                status: event.target.value as BookingStatus,
+                              })
+                            }
+                            className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                          >
+                            {bookingStatuses.map((status) => (
+                              <option key={status} value={status}>
+                                {label(status)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
 
-                      <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
-                        Payment Status
-                        <select
-                          value={booking.payment_status}
-                          disabled={updatingId === booking.id}
-                          onChange={(event) =>
-                            updateBooking(booking.id, {
-                              payment_status: event.target
-                                .value as PaymentStatus,
-                            })
-                          }
-                          className="mt-2 block min-w-[180px] rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
-                        >
-                          {paymentStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {label(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                          Payment Status
+                          <select
+                            value={booking.payment_status}
+                            disabled={updatingId === booking.id}
+                            onChange={(event) =>
+                              updateBooking(booking.id, {
+                                payment_status: event.target.value as PaymentStatus,
+                              })
+                            }
+                            className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                          >
+                            {paymentStatuses.map((status) => (
+                              <option key={status} value={status}>
+                                {label(status)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="rounded-2xl border border-[#c9a96b]/25 bg-white p-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#98733b]">
+                          Customer Quotation
+                        </p>
+
+                        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_110px]">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Total Amount
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={booking.total_amount ?? ""}
+                              disabled={updatingId === booking.id}
+                              onChange={(event) =>
+                                editBookingField(booking.id, "total_amount", event.target.value)
+                              }
+                              placeholder="0"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-sm font-black text-[#17302d] outline-none"
+                            />
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Paid Amount
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={booking.paid_amount ?? ""}
+                              disabled={updatingId === booking.id}
+                              onChange={(event) =>
+                                editBookingField(booking.id, "paid_amount", event.target.value)
+                              }
+                              placeholder="0"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-sm font-black text-[#17302d] outline-none"
+                            />
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Currency
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={booking.currency || "PKR"}
+                              disabled={updatingId === booking.id}
+                              onChange={(event) =>
+                                editBookingField(booking.id, "currency", event.target.value)
+                              }
+                              placeholder="PKR"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-sm font-black uppercase text-[#17302d] outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-[#17302d]/45">
+                            Customer dashboard par yahi quotation amount show hoga.
+                          </p>
+
+                          <button
+                            type="button"
+                            disabled={updatingId === booking.id}
+                            onClick={() => saveQuotation(booking)}
+                            className="rounded-xl bg-[#153e38] px-5 py-3 text-xs font-black text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {updatingId === booking.id ? "Saving..." : "Save Quotation"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </article>
