@@ -26,6 +26,21 @@ type PaymentStatus =
   | "paid"
   | "refunded";
 
+type VisaStatus =
+  | "not_started"
+  | "documents_pending"
+  | "submitted"
+  | "under_process"
+  | "approved"
+  | "issued"
+  | "rejected";
+
+type CustomerDocument = {
+  id: string;
+  document_type: "passport" | "cnic" | "photos" | "vaccination";
+  status: "pending" | "approved" | "rejected";
+};
+
 type Booking = {
   id: string;
   booking_type: "hajj" | "umrah" | "flight";
@@ -37,6 +52,10 @@ type Booking = {
   total_amount: number | string;
   paid_amount: number | string;
   currency: string;
+  visa_status: VisaStatus;
+  visa_reference: string | null;
+  visa_note: string | null;
+  visa_updated_at: string | null;
   created_at: string;
 };
 
@@ -128,6 +147,7 @@ function formatMoney(
 export default function CustomerDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [customerDocuments, setCustomerDocuments] = useState<CustomerDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -172,7 +192,7 @@ export default function CustomerDashboard() {
           await supabase
             .from("bookings")
             .select(
-              "id, booking_type, package_name, travelers, travel_date, status, payment_status, total_amount, paid_amount, currency, created_at"
+              "id, booking_type, package_name, travelers, travel_date, status, payment_status, total_amount, paid_amount, currency, visa_status, visa_reference, visa_note, visa_updated_at, created_at"
             )
             .order("created_at", { ascending: false });
 
@@ -180,9 +200,22 @@ export default function CustomerDashboard() {
           throw bookingError;
         }
 
+        const { data: documentData, error: documentError } =
+          await supabase
+            .from("customer_documents")
+            .select("id, document_type, status")
+            .order("created_at", { ascending: false });
+
+        if (documentError) {
+          throw documentError;
+        }
+
         if (mounted) {
           setProfile(profileData);
           setBookings((bookingData || []) as Booking[]);
+          setCustomerDocuments(
+            (documentData || []) as CustomerDocument[]
+          );
         }
       } catch (error) {
         if (mounted) {
@@ -256,19 +289,38 @@ export default function CustomerDashboard() {
     ? statusProgress[latestBooking.status]
     : 8;
 
-  const visaStatus = useMemo(() => {
-    if (!latestBooking) return "Not Started";
+  const visaStatus = latestBooking
+    ? formatLabel(latestBooking.visa_status || "not_started")
+    : "Not Started";
 
-    if (latestBooking.status === "confirmed") return "Confirmed";
-    if (latestBooking.status === "approved") return "Approved";
-    if (latestBooking.status === "under_review") {
-      return "Under Review";
-    }
-    if (latestBooking.status === "submitted") return "Submitted";
-    if (latestBooking.status === "cancelled") return "Cancelled";
+  const documentStats = useMemo(() => {
+    const requiredTypes = [
+      "passport",
+      "cnic",
+      "photos",
+      "vaccination",
+    ] as const;
 
-    return "Not Started";
-  }, [latestBooking]);
+    const uploadedTypes = requiredTypes.filter((type) =>
+      customerDocuments.some(
+        (document) => document.document_type === type
+      )
+    ).length;
+
+    const approvedTypes = requiredTypes.filter((type) =>
+      customerDocuments.some(
+        (document) =>
+          document.document_type === type &&
+          document.status === "approved"
+      )
+    ).length;
+
+    return {
+      uploadedTypes,
+      approvedTypes,
+      total: requiredTypes.length,
+    };
+  }, [customerDocuments]);
 
   function handleNavigation(label: string) {
     if (label === "Overview") {
@@ -286,6 +338,16 @@ export default function CustomerDashboard() {
       label === "Hajj & Umrah"
     ) {
       window.location.assign("/customer/booking/new");
+      return;
+    }
+
+    if (label === "Visa Status") {
+      window.location.assign("/customer/visa");
+      return;
+    }
+
+    if (label === "Documents") {
+      window.location.assign("/customer/documents");
       return;
     }
 
@@ -660,18 +722,24 @@ export default function CustomerDashboard() {
                   "◉",
                 ],
                 [
-                  "0 / 4",
-                  "Documents Ready",
-                  "Document upload module is next",
+                  `${documentStats.approvedTypes} / ${documentStats.total}`,
+                  "Documents Approved",
+                  documentStats.uploadedTypes > 0
+                    ? `${documentStats.uploadedTypes} categor${
+                        documentStats.uploadedTypes === 1 ? "y" : "ies"
+                      } uploaded`
+                    : "Upload your required documents",
                   "▤",
                 ],
                 [
                   visaStatus,
                   "Visa Status",
                   latestBooking
-                    ? `Based on latest ${formatLabel(
-                        latestBooking.booking_type
-                      )} request`
+                    ? latestBooking.visa_updated_at
+                      ? `Updated by Makki Madni administration`
+                      : `Tracking ready for latest ${formatLabel(
+                          latestBooking.booking_type
+                        )} booking`
                     : "Available after booking",
                   "◎",
                 ],

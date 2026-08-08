@@ -27,6 +27,15 @@ type PaymentStatus =
   | "paid"
   | "refunded";
 
+type VisaStatus =
+  | "not_started"
+  | "documents_pending"
+  | "submitted"
+  | "under_process"
+  | "approved"
+  | "issued"
+  | "rejected";
+
 type Booking = {
   id: string;
   booking_type: "hajj" | "umrah" | "flight";
@@ -39,6 +48,10 @@ type Booking = {
   total_amount: number | string;
   paid_amount: number | string;
   currency: string;
+  visa_status: VisaStatus;
+  visa_reference: string | null;
+  visa_note: string | null;
+  visa_updated_at: string | null;
   created_at: string;
 };
 
@@ -60,6 +73,40 @@ type DocumentRecord = {
   updated_at: string;
 };
 
+type PaymentTransaction = {
+  id: string;
+  booking_id: string;
+  user_id: string;
+  transaction_type: "payment" | "refund";
+  amount: number | string;
+  currency: string;
+  payment_method:
+    | "bank_transfer"
+    | "cash"
+    | "card"
+    | "online"
+    | "other";
+  receipt_reference: string;
+  external_reference: string | null;
+  note: string | null;
+  status: "posted" | "void";
+  paid_at: string;
+  created_at: string;
+};
+
+type PaymentDraft = {
+  transactionType: "payment" | "refund";
+  amount: string;
+  paymentMethod:
+    | "bank_transfer"
+    | "cash"
+    | "card"
+    | "online"
+    | "other";
+  externalReference: string;
+  note: string;
+};
+
 const bookingStatuses: BookingStatus[] = [
   "draft",
   "submitted",
@@ -75,6 +122,32 @@ const paymentStatuses: PaymentStatus[] = [
   "paid",
   "refunded",
 ];
+
+const visaStatuses: VisaStatus[] = [
+  "not_started",
+  "documents_pending",
+  "submitted",
+  "under_process",
+  "approved",
+  "issued",
+  "rejected",
+];
+
+const paymentMethods: PaymentTransaction["payment_method"][] = [
+  "bank_transfer",
+  "cash",
+  "card",
+  "online",
+  "other",
+];
+
+const emptyPaymentDraft: PaymentDraft = {
+  transactionType: "payment",
+  amount: "",
+  paymentMethod: "bank_transfer",
+  externalReference: "",
+  note: "",
+};
 
 function label(value: string) {
   return value
@@ -131,6 +204,18 @@ export default function AdminDashboard() {
   const [message, setMessage] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [reviewingDocumentId, setReviewingDocumentId] = useState<string | null>(null);
+  const [selectedDocumentCustomerId, setSelectedDocumentCustomerId] =
+    useState<string | null>(null);
+  const [visaDrafts, setVisaDrafts] = useState<
+    Record<string, { reference: string; note: string }>
+  >({});
+  const [paymentTransactions, setPaymentTransactions] =
+    useState<PaymentTransaction[]>([]);
+  const [paymentDrafts, setPaymentDrafts] = useState<
+    Record<string, PaymentDraft>
+  >({});
+  const [postingPaymentBookingId, setPostingPaymentBookingId] =
+    useState<string | null>(null);
 
   async function loadData() {
     const supabase = createClient();
@@ -172,7 +257,7 @@ export default function AdminDashboard() {
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .select(
-        "id, booking_type, package_name, travelers, departure_city, travel_date, status, payment_status, total_amount, paid_amount, currency, created_at"
+        "id, booking_type, package_name, travelers, departure_city, travel_date, status, payment_status, total_amount, paid_amount, currency, visa_status, visa_reference, visa_note, visa_updated_at, created_at"
       )
       .order("created_at", { ascending: false });
 
@@ -193,10 +278,36 @@ export default function AdminDashboard() {
 
     const loadedDocuments = (documentData || []) as DocumentRecord[];
 
+    const { data: paymentData, error: paymentError } = await supabase
+      .from("payment_transactions")
+      .select(
+        "id, booking_id, user_id, transaction_type, amount, currency, payment_method, receipt_reference, external_reference, note, status, paid_at, created_at"
+      )
+      .order("paid_at", { ascending: false });
+
+    if (paymentError) {
+      throw paymentError;
+    }
+
     setAdmin(adminProfile);
     setProfiles((profileData || []) as Profile[]);
-    setBookings((bookingData || []) as Booking[]);
+    const loadedBookings = (bookingData || []) as Booking[];
+    setBookings(loadedBookings);
+    setVisaDrafts(
+      loadedBookings.reduce<
+        Record<string, { reference: string; note: string }>
+      >((result, booking) => {
+        result[booking.id] = {
+          reference: booking.visa_reference || "",
+          note: booking.visa_note || "",
+        };
+        return result;
+      }, {})
+    );
     setDocuments(loadedDocuments);
+    setPaymentTransactions(
+      (paymentData || []) as PaymentTransaction[]
+    );
     setDocumentNotes(
       loadedDocuments.reduce<Record<string, string>>((result, document) => {
         result[document.id] = document.admin_note || "";
@@ -267,9 +378,46 @@ export default function AdminDashboard() {
     };
   }, [profiles, bookings, documents]);
 
+  const documentCustomers = useMemo(() => {
+    const userIds = new Set(documents.map((document) => document.user_id));
+
+    return profiles.filter(
+      (profile) => profile.role === "customer" && userIds.has(profile.id)
+    );
+  }, [profiles, documents]);
+
+  const selectedCustomerDocuments = useMemo(() => {
+    if (!selectedDocumentCustomerId) return [];
+
+    return documents.filter(
+      (document) => document.user_id === selectedDocumentCustomerId
+    );
+  }, [documents, selectedDocumentCustomerId]);
+
+  const selectedDocumentCustomer = useMemo(() => {
+    if (!selectedDocumentCustomerId) return null;
+
+    return profiles.find(
+      (profile) => profile.id === selectedDocumentCustomerId
+    ) || null;
+  }, [profiles, selectedDocumentCustomerId]);
+
   async function updateBooking(
     bookingId: string,
-    updates: Partial<Pick<Booking, "status" | "payment_status" | "total_amount" | "paid_amount" | "currency">>
+    updates: Partial<
+      Pick<
+        Booking,
+        | "status"
+        | "payment_status"
+        | "total_amount"
+        | "paid_amount"
+        | "currency"
+        | "visa_status"
+        | "visa_reference"
+        | "visa_note"
+        | "visa_updated_at"
+      >
+    >
   ) {
     setUpdatingId(bookingId);
     setMessage("");
@@ -304,6 +452,127 @@ export default function AdminDashboard() {
     } finally {
       setUpdatingId(null);
     }
+  }
+
+  function getPaymentDraft(bookingId: string): PaymentDraft {
+    return paymentDrafts[bookingId] || emptyPaymentDraft;
+  }
+
+  function updatePaymentDraft(
+    bookingId: string,
+    updates: Partial<PaymentDraft>
+  ) {
+    setPaymentDrafts((current) => ({
+      ...current,
+      [bookingId]: {
+        ...(current[bookingId] || emptyPaymentDraft),
+        ...updates,
+      },
+    }));
+  }
+
+  async function addPaymentTransaction(booking: Booking) {
+    const draft = getPaymentDraft(booking.id);
+    const amount = Number(draft.amount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Payment amount 0 se zyada hona chahiye.");
+      return;
+    }
+
+    setPostingPaymentBookingId(booking.id);
+    setMessage("");
+
+    try {
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("payment_transactions")
+        .insert({
+          booking_id: booking.id,
+          transaction_type: draft.transactionType,
+          amount,
+          payment_method: draft.paymentMethod,
+          external_reference:
+            draft.externalReference.trim() || null,
+          note: draft.note.trim() || null,
+          status: "posted",
+          paid_at: new Date().toISOString(),
+        })
+        .select(
+          "id, booking_id, user_id, transaction_type, amount, currency, payment_method, receipt_reference, external_reference, note, status, paid_at, created_at"
+        )
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      setPaymentTransactions((current) => [
+        data as PaymentTransaction,
+        ...current,
+      ]);
+
+      setPaymentDrafts((current) => ({
+        ...current,
+        [booking.id]: { ...emptyPaymentDraft },
+      }));
+
+      const { data: refreshedBooking, error: bookingError } =
+        await supabase
+          .from("bookings")
+          .select(
+            "paid_amount, payment_status, total_amount, currency"
+          )
+          .eq("id", booking.id)
+          .single();
+
+      if (bookingError) {
+        throw bookingError;
+      }
+
+      setBookings((current) =>
+        current.map((item) =>
+          item.id === booking.id
+            ? {
+                ...item,
+                paid_amount: refreshedBooking.paid_amount,
+                payment_status:
+                  refreshedBooking.payment_status as PaymentStatus,
+                total_amount: refreshedBooking.total_amount,
+                currency: refreshedBooking.currency,
+              }
+            : item
+        )
+      );
+
+      setMessage(
+        `${draft.transactionType === "refund" ? "Refund" : "Payment"} posted successfully. Receipt: ${
+          (data as PaymentTransaction).receipt_reference
+        }`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Payment failed: ${error.message}`
+          : "Payment transaction save nahi ho saki."
+      );
+    } finally {
+      setPostingPaymentBookingId(null);
+    }
+  }
+
+  async function saveVisaDetails(booking: Booking) {
+    const draft = visaDrafts[booking.id] || {
+      reference: booking.visa_reference || "",
+      note: booking.visa_note || "",
+    };
+
+    await updateBooking(booking.id, {
+      visa_reference: draft.reference.trim() || null,
+      visa_note: draft.note.trim() || null,
+      visa_updated_at: new Date().toISOString(),
+    });
   }
 
   function editBookingField(
@@ -743,6 +1012,306 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                       </div>
+
+                      <div className="rounded-2xl border border-[#7ba99f]/25 bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#477b72]">
+                              Visa Management
+                            </p>
+                            <p className="mt-1 text-xs text-[#17302d]/45">
+                              Customer ko isi booking ka live visa status show hoga.
+                            </p>
+                          </div>
+
+                          {booking.visa_updated_at && (
+                            <p className="text-[10px] text-[#17302d]/35">
+                              Updated {formatCreatedAt(booking.visa_updated_at)}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Visa Status
+                            <select
+                              value={booking.visa_status || "not_started"}
+                              disabled={updatingId === booking.id}
+                              onChange={(event) =>
+                                updateBooking(booking.id, {
+                                  visa_status: event.target.value as VisaStatus,
+                                  visa_updated_at: new Date().toISOString(),
+                                })
+                              }
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                            >
+                              {visaStatuses.map((status) => (
+                                <option key={status} value={status}>
+                                  {label(status)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Visa Reference
+                            <input
+                              type="text"
+                              value={
+                                visaDrafts[booking.id]?.reference ??
+                                booking.visa_reference ??
+                                ""
+                              }
+                              disabled={updatingId === booking.id}
+                              onChange={(event) =>
+                                setVisaDrafts((current) => ({
+                                  ...current,
+                                  [booking.id]: {
+                                    reference: event.target.value,
+                                    note:
+                                      current[booking.id]?.note ??
+                                      booking.visa_note ??
+                                      "",
+                                  },
+                                }))
+                              }
+                              placeholder="e.g. KSA-VISA-12345"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-bold text-[#17302d] outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="mt-3 block text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                          Visa Note
+                          <textarea
+                            rows={3}
+                            value={
+                              visaDrafts[booking.id]?.note ??
+                              booking.visa_note ??
+                              ""
+                            }
+                            disabled={updatingId === booking.id}
+                            onChange={(event) =>
+                              setVisaDrafts((current) => ({
+                                ...current,
+                                [booking.id]: {
+                                  reference:
+                                    current[booking.id]?.reference ??
+                                    booking.visa_reference ??
+                                    "",
+                                  note: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Optional update for customer..."
+                            className="mt-2 block w-full resize-none rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-medium normal-case tracking-normal text-[#17302d] outline-none"
+                          />
+                        </label>
+
+                        <div className="mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            disabled={updatingId === booking.id}
+                            onClick={() => saveVisaDetails(booking)}
+                            className="rounded-xl bg-[#477b72] px-5 py-3 text-xs font-black text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {updatingId === booking.id
+                              ? "Saving..."
+                              : "Save Visa Details"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-[#b9954d]/25 bg-[#fffdf7] p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8a692f]">
+                              Payments & Receipts
+                            </p>
+                            <p className="mt-1 text-xs text-[#17302d]/45">
+                              Payment post karte hi booking balance automatically update hoga.
+                            </p>
+                          </div>
+
+                          <div className="text-left sm:text-right">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-[#17302d]/35">
+                              Balance
+                            </p>
+                            <p className="mt-1 text-sm font-black text-[#153e38]">
+                              {booking.currency || "PKR"}{" "}
+                              {Math.max(
+                                0,
+                                Number(booking.total_amount || 0) -
+                                  Number(booking.paid_amount || 0)
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Type
+                            <select
+                              value={getPaymentDraft(booking.id).transactionType}
+                              disabled={postingPaymentBookingId === booking.id}
+                              onChange={(event) =>
+                                updatePaymentDraft(booking.id, {
+                                  transactionType: event.target.value as
+                                    | "payment"
+                                    | "refund",
+                                })
+                              }
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                            >
+                              <option value="payment">Payment</option>
+                              <option value="refund">Refund</option>
+                            </select>
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Amount
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={getPaymentDraft(booking.id).amount}
+                              disabled={postingPaymentBookingId === booking.id}
+                              onChange={(event) =>
+                                updatePaymentDraft(booking.id, {
+                                  amount: event.target.value,
+                                })
+                              }
+                              placeholder="0"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                            />
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Method
+                            <select
+                              value={getPaymentDraft(booking.id).paymentMethod}
+                              disabled={postingPaymentBookingId === booking.id}
+                              onChange={(event) =>
+                                updatePaymentDraft(booking.id, {
+                                  paymentMethod:
+                                    event.target.value as PaymentTransaction["payment_method"],
+                                })
+                              }
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-black text-[#17302d] outline-none"
+                            >
+                              {paymentMethods.map((method) => (
+                                <option key={method} value={method}>
+                                  {label(method)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                            Bank / Txn Ref
+                            <input
+                              type="text"
+                              value={
+                                getPaymentDraft(booking.id).externalReference
+                              }
+                              disabled={postingPaymentBookingId === booking.id}
+                              onChange={(event) =>
+                                updatePaymentDraft(booking.id, {
+                                  externalReference: event.target.value,
+                                })
+                              }
+                              placeholder="Optional"
+                              className="mt-2 block w-full rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-bold text-[#17302d] outline-none"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="mt-3 block text-[10px] font-black uppercase tracking-wider text-[#17302d]/45">
+                          Payment Note
+                          <textarea
+                            rows={2}
+                            value={getPaymentDraft(booking.id).note}
+                            disabled={postingPaymentBookingId === booking.id}
+                            onChange={(event) =>
+                              updatePaymentDraft(booking.id, {
+                                note: event.target.value,
+                              })
+                            }
+                            placeholder="Optional internal/customer payment note..."
+                            className="mt-2 block w-full resize-none rounded-xl border border-[#17302d]/10 bg-white px-3 py-3 text-xs font-medium normal-case tracking-normal text-[#17302d] outline-none"
+                          />
+                        </label>
+
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-[#17302d]/45">
+                            Currency: <strong>{booking.currency || "PKR"}</strong>
+                          </p>
+
+                          <button
+                            type="button"
+                            disabled={postingPaymentBookingId === booking.id}
+                            onClick={() => addPaymentTransaction(booking)}
+                            className="rounded-xl bg-[#8a692f] px-5 py-3 text-xs font-black text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {postingPaymentBookingId === booking.id
+                              ? "Posting..."
+                              : "Post Payment / Refund"}
+                          </button>
+                        </div>
+
+                        {paymentTransactions.filter(
+                          (transaction) =>
+                            transaction.booking_id === booking.id
+                        ).length > 0 && (
+                          <div className="mt-5 border-t border-[#17302d]/10 pt-4">
+                            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8a692f]">
+                              Recent Receipts
+                            </p>
+
+                            <div className="mt-3 space-y-2">
+                              {paymentTransactions
+                                .filter(
+                                  (transaction) =>
+                                    transaction.booking_id === booking.id
+                                )
+                                .slice(0, 5)
+                                .map((transaction) => (
+                                  <div
+                                    key={transaction.id}
+                                    className="flex flex-col gap-2 rounded-xl border border-[#17302d]/8 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                                  >
+                                    <div>
+                                      <p className="text-xs font-black">
+                                        {transaction.receipt_reference}
+                                      </p>
+                                      <p className="mt-1 text-[10px] text-[#17302d]/40">
+                                        {label(transaction.transaction_type)} •{" "}
+                                        {label(transaction.payment_method)} •{" "}
+                                        {formatCreatedAt(transaction.paid_at)}
+                                      </p>
+                                    </div>
+
+                                    <p
+                                      className={`text-sm font-black ${
+                                        transaction.transaction_type === "refund"
+                                          ? "text-red-600"
+                                          : "text-emerald-700"
+                                      }`}
+                                    >
+                                      {transaction.transaction_type === "refund"
+                                        ? "-"
+                                        : "+"}
+                                      {transaction.currency}{" "}
+                                      {Number(
+                                        transaction.amount || 0
+                                      ).toLocaleString()}
+                                    </p>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </article>
@@ -758,8 +1327,12 @@ export default function AdminDashboard() {
                 Document Verification
               </p>
               <h2 className="mt-2 font-serif text-3xl font-semibold">
-                Customer documents review
+                Customer document folders
               </h2>
+              <p className="mt-2 text-xs leading-6 text-[#17302d]/45">
+                Har customer ka separate folder hai. Customer ka box open karne
+                par sirf usi ke documents show honge.
+              </p>
             </div>
 
             <p className="text-xs text-[#17302d]/40">
@@ -767,115 +1340,235 @@ export default function AdminDashboard() {
             </p>
           </div>
 
-          {documents.length === 0 ? (
+          {documentCustomers.length === 0 ? (
             <div className="mt-7 rounded-2xl border border-dashed border-[#17302d]/15 bg-[#fbfaf7] py-12 text-center">
-              <p className="font-black">No document submissions yet</p>
+              <p className="font-black">No customer documents yet</p>
               <p className="mt-2 text-xs text-[#17302d]/40">
-                Customer uploads will appear here automatically.
+                Jis customer ne document upload kiya hoga, uska box yahan aa jayega.
               </p>
             </div>
           ) : (
-            <div className="mt-7 space-y-4">
-              {documents.map((document) => {
-                const customer = getCustomer(document.user_id);
-                const isReviewing = reviewingDocumentId === document.id;
+            <>
+              {!selectedDocumentCustomerId && (
+                <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {documentCustomers.map((customer) => {
+                    const customerDocuments = documents.filter(
+                      (document) => document.user_id === customer.id
+                    );
 
-                return (
-                  <article
-                    key={document.id}
-                    className="rounded-[1.7rem] border border-[#17302d]/10 bg-[#fbfaf7] p-5 sm:p-6"
-                  >
-                    <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-black">
-                            {label(document.document_type)}
-                          </h3>
+                    const pending = customerDocuments.filter(
+                      (document) => document.status === "pending"
+                    ).length;
 
-                          <span
-                            className={`rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-wider ${documentStatusClasses(
-                              document.status
-                            )}`}
-                          >
-                            {label(document.status)}
-                          </span>
+                    const approved = customerDocuments.filter(
+                      (document) => document.status === "approved"
+                    ).length;
+
+                    const rejected = customerDocuments.filter(
+                      (document) => document.status === "rejected"
+                    ).length;
+
+                    return (
+                      <article
+                        key={customer.id}
+                        className="rounded-[1.7rem] border border-[#17302d]/10 bg-[#fbfaf7] p-5"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="truncate text-lg font-black">
+                              {customer.full_name || "Customer"}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-[#17302d]/45">
+                              {customer.email || "Email unavailable"}
+                            </p>
+                            <p className="mt-1 text-xs text-[#17302d]/35">
+                              {customer.mobile || "No mobile"}
+                            </p>
+                          </div>
+
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#153e38] text-sm font-black text-[#ead69d]">
+                            {customerDocuments.length}
+                          </div>
                         </div>
 
-                        <p className="mt-2 text-sm font-bold text-[#17302d]/70">
-                          {customer?.full_name || "Customer"}
-                        </p>
-                        <p className="mt-1 text-xs text-[#17302d]/45">
-                          {customer?.email || "Email unavailable"}
-                        </p>
+                        <div className="mt-5 grid grid-cols-3 gap-2">
+                          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-center">
+                            <p className="text-lg font-black text-amber-700">
+                              {pending}
+                            </p>
+                            <p className="mt-1 text-[8px] font-black uppercase tracking-wider text-amber-700/65">
+                              Pending
+                            </p>
+                          </div>
 
-                        <div className="mt-4 rounded-2xl border border-[#17302d]/8 bg-white p-4">
-                          <p className="truncate text-sm font-black">
-                            {document.file_name}
-                          </p>
-                          <p className="mt-2 text-[10px] text-[#17302d]/40">
-                            {formatFileSize(document.file_size)} • Uploaded{" "}
-                            {formatCreatedAt(document.created_at)}
-                          </p>
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-center">
+                            <p className="text-lg font-black text-emerald-700">
+                              {approved}
+                            </p>
+                            <p className="mt-1 text-[8px] font-black uppercase tracking-wider text-emerald-700/65">
+                              Approved
+                            </p>
+                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => viewDocument(document)}
-                            className="mt-4 rounded-xl bg-[#153e38] px-4 py-3 text-xs font-black text-white shadow-sm"
-                          >
-                            Open Document
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-[#c9a96b]/25 bg-white p-4">
-                        <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[#98733b]">
-                          Admin Note
-                          <textarea
-                            rows={4}
-                            value={documentNotes[document.id] || ""}
-                            disabled={isReviewing}
-                            onChange={(event) =>
-                              setDocumentNotes((current) => ({
-                                ...current,
-                                [document.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="Optional note. Rejection ki wajah yahan likhein..."
-                            className="mt-2 block w-full resize-none rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-medium normal-case tracking-normal text-[#17302d] outline-none"
-                          />
-                        </label>
-
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            disabled={isReviewing}
-                            onClick={() => reviewDocument(document, "approved")}
-                            className="rounded-xl bg-emerald-700 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isReviewing ? "Saving..." : "Approve"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isReviewing}
-                            onClick={() => reviewDocument(document, "rejected")}
-                            className="rounded-xl bg-red-600 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isReviewing ? "Saving..." : "Reject"}
-                          </button>
+                          <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-center">
+                            <p className="text-lg font-black text-red-700">
+                              {rejected}
+                            </p>
+                            <p className="mt-1 text-[8px] font-black uppercase tracking-wider text-red-700/65">
+                              Rejected
+                            </p>
+                          </div>
                         </div>
 
-                        {document.reviewed_at && (
-                          <p className="mt-3 text-[10px] text-[#17302d]/35">
-                            Last reviewed {formatCreatedAt(document.reviewed_at)}
-                          </p>
-                        )}
-                      </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedDocumentCustomerId(customer.id)
+                          }
+                          className="mt-5 w-full rounded-xl bg-[#153e38] px-4 py-3.5 text-xs font-black text-white shadow-sm"
+                        >
+                          Open Documents
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedDocumentCustomerId && (
+                <div className="mt-7">
+                  <div className="flex flex-col gap-4 rounded-[1.7rem] border border-[#c9a96b]/25 bg-[#fffaf0] p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#98733b]">
+                        Open Customer Folder
+                      </p>
+                      <h3 className="mt-2 text-xl font-black">
+                        {selectedDocumentCustomer?.full_name || "Customer"}
+                      </h3>
+                      <p className="mt-1 text-xs text-[#17302d]/45">
+                        {selectedDocumentCustomer?.email || "Email unavailable"}
+                      </p>
                     </div>
-                  </article>
-                );
-              })}
-            </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocumentCustomerId(null)}
+                      className="rounded-xl border border-[#17302d]/10 bg-white px-4 py-3 text-xs font-black shadow-sm"
+                    >
+                      ← Back to Customers
+                    </button>
+                  </div>
+
+                  {selectedCustomerDocuments.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-[#17302d]/15 bg-[#fbfaf7] py-10 text-center">
+                      <p className="text-sm font-black">
+                        Is customer ke documents available nahi hain.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {selectedCustomerDocuments.map((document) => {
+                        const isReviewing =
+                          reviewingDocumentId === document.id;
+
+                        return (
+                          <article
+                            key={document.id}
+                            className="rounded-[1.7rem] border border-[#17302d]/10 bg-[#fbfaf7] p-5 sm:p-6"
+                          >
+                            <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="text-lg font-black">
+                                    {label(document.document_type)}
+                                  </h3>
+
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-wider ${documentStatusClasses(
+                                      document.status
+                                    )}`}
+                                  >
+                                    {label(document.status)}
+                                  </span>
+                                </div>
+
+                                <div className="mt-4 rounded-2xl border border-[#17302d]/8 bg-white p-4">
+                                  <p className="truncate text-sm font-black">
+                                    {document.file_name}
+                                  </p>
+                                  <p className="mt-2 text-[10px] text-[#17302d]/40">
+                                    {formatFileSize(document.file_size)} • Uploaded{" "}
+                                    {formatCreatedAt(document.created_at)}
+                                  </p>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => viewDocument(document)}
+                                    className="mt-4 rounded-xl bg-[#153e38] px-4 py-3 text-xs font-black text-white shadow-sm"
+                                  >
+                                    Open Document
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-[#c9a96b]/25 bg-white p-4">
+                                <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[#98733b]">
+                                  Admin Note
+                                  <textarea
+                                    rows={4}
+                                    value={documentNotes[document.id] || ""}
+                                    disabled={isReviewing}
+                                    onChange={(event) =>
+                                      setDocumentNotes((current) => ({
+                                        ...current,
+                                        [document.id]: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Optional note. Rejection ki wajah yahan likhein..."
+                                    className="mt-2 block w-full resize-none rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-medium normal-case tracking-normal text-[#17302d] outline-none"
+                                  />
+                                </label>
+
+                                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                  <button
+                                    type="button"
+                                    disabled={isReviewing}
+                                    onClick={() =>
+                                      reviewDocument(document, "approved")
+                                    }
+                                    className="rounded-xl bg-emerald-700 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isReviewing ? "Saving..." : "Approve"}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={isReviewing}
+                                    onClick={() =>
+                                      reviewDocument(document, "rejected")
+                                    }
+                                    className="rounded-xl bg-red-600 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isReviewing ? "Saving..." : "Reject"}
+                                  </button>
+                                </div>
+
+                                {document.reviewed_at && (
+                                  <p className="mt-3 text-[10px] text-[#17302d]/35">
+                                    Last reviewed{" "}
+                                    {formatCreatedAt(document.reviewed_at)}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </section>
 
