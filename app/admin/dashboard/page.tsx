@@ -42,6 +42,24 @@ type Booking = {
   created_at: string;
 };
 
+type DocumentStatus = "pending" | "approved" | "rejected";
+
+type DocumentRecord = {
+  id: string;
+  user_id: string;
+  document_type: "passport" | "cnic" | "photos" | "vaccination";
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size: number | null;
+  status: DocumentStatus;
+  admin_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const bookingStatuses: BookingStatus[] = [
   "draft",
   "submitted",
@@ -84,13 +102,35 @@ function formatCreatedAt(value: string) {
   }).format(new Date(value));
 }
 
+function formatFileSize(size: number | null) {
+  if (!size) return "Unknown size";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function documentStatusClasses(status: DocumentStatus) {
+  if (status === "approved") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "rejected") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
 export default function AdminDashboard() {
   const [admin, setAdmin] = useState<Profile | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [documentNotes, setDocumentNotes] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [reviewingDocumentId, setReviewingDocumentId] = useState<string | null>(null);
 
   async function loadData() {
     const supabase = createClient();
@@ -140,9 +180,29 @@ export default function AdminDashboard() {
       throw bookingError;
     }
 
+    const { data: documentData, error: documentError } = await supabase
+      .from("customer_documents")
+      .select(
+        "id, user_id, document_type, file_name, storage_path, mime_type, file_size, status, admin_note, reviewed_by, reviewed_at, created_at, updated_at"
+      )
+      .order("created_at", { ascending: false });
+
+    if (documentError) {
+      throw documentError;
+    }
+
+    const loadedDocuments = (documentData || []) as DocumentRecord[];
+
     setAdmin(adminProfile);
     setProfiles((profileData || []) as Profile[]);
     setBookings((bookingData || []) as Booking[]);
+    setDocuments(loadedDocuments);
+    setDocumentNotes(
+      loadedDocuments.reduce<Record<string, string>>((result, document) => {
+        result[document.id] = document.admin_note || "";
+        return result;
+      }, {})
+    );
   }
 
   useEffect(() => {
@@ -194,13 +254,18 @@ export default function AdminDashboard() {
         booking.payment_status === "partially_paid"
     ).length;
 
+    const pendingDocuments = documents.filter(
+      (document) => document.status === "pending"
+    ).length;
+
     return {
       customers,
       pendingBookings,
       confirmedBookings,
       pendingPayments,
+      pendingDocuments,
     };
-  }, [profiles, bookings]);
+  }, [profiles, bookings, documents]);
 
   async function updateBooking(
     bookingId: string,
@@ -288,6 +353,93 @@ export default function AdminDashboard() {
       paid_amount: paidAmount,
       currency,
     });
+  }
+
+  function getCustomer(userId: string) {
+    return profiles.find((profile) => profile.id === userId);
+  }
+
+  async function viewDocument(document: DocumentRecord) {
+    setMessage("");
+
+    try {
+      const supabase = createClient();
+
+      const { data, error } = await supabase.storage
+        .from("customer-documents")
+        .createSignedUrl(document.storage_path, 120);
+
+      if (error) {
+        throw error;
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Document open failed: ${error.message}`
+          : "Document open nahi ho saka."
+      );
+    }
+  }
+
+  async function reviewDocument(
+    document: DocumentRecord,
+    status: DocumentStatus
+  ) {
+    if (!admin?.id) return;
+
+    setReviewingDocumentId(document.id);
+    setMessage("");
+
+    try {
+      const supabase = createClient();
+      const note = (documentNotes[document.id] || "").trim();
+
+      const updates = {
+        status,
+        admin_note: note || null,
+        reviewed_by: admin.id,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("customer_documents")
+        .update(updates)
+        .eq("id", document.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setDocuments((current) =>
+        current.map((item) =>
+          item.id === document.id
+            ? {
+                ...item,
+                ...updates,
+              }
+            : item
+        )
+      );
+
+      setMessage(
+        status === "approved"
+          ? "Document approve ho gaya."
+          : status === "rejected"
+            ? "Document reject ho gaya. Customer ko note show hoga."
+            : "Document status update ho gaya."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Document review failed: ${error.message}`
+          : "Document review update nahi ho saka."
+      );
+    } finally {
+      setReviewingDocumentId(null);
+    }
   }
 
   async function handleLogout() {
@@ -387,7 +539,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           {[
             [stats.customers, "Customers", "Registered customer accounts"],
             [
@@ -404,6 +556,11 @@ export default function AdminDashboard() {
               stats.pendingPayments,
               "Pending Payments",
               "Payment action still required",
+            ],
+            [
+              stats.pendingDocuments,
+              "Pending Documents",
+              "Needs verification",
             ],
           ].map(([value, title, note]) => (
             <article
@@ -590,6 +747,134 @@ export default function AdminDashboard() {
                   </div>
                 </article>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-7 rounded-[2rem] border border-[#17302d]/10 bg-white p-5 shadow-[0_18px_55px_rgba(26,50,45,0.06)] sm:p-7">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#98733b]">
+                Document Verification
+              </p>
+              <h2 className="mt-2 font-serif text-3xl font-semibold">
+                Customer documents review
+              </h2>
+            </div>
+
+            <p className="text-xs text-[#17302d]/40">
+              {documents.filter((document) => document.status === "pending").length} pending review
+            </p>
+          </div>
+
+          {documents.length === 0 ? (
+            <div className="mt-7 rounded-2xl border border-dashed border-[#17302d]/15 bg-[#fbfaf7] py-12 text-center">
+              <p className="font-black">No document submissions yet</p>
+              <p className="mt-2 text-xs text-[#17302d]/40">
+                Customer uploads will appear here automatically.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-7 space-y-4">
+              {documents.map((document) => {
+                const customer = getCustomer(document.user_id);
+                const isReviewing = reviewingDocumentId === document.id;
+
+                return (
+                  <article
+                    key={document.id}
+                    className="rounded-[1.7rem] border border-[#17302d]/10 bg-[#fbfaf7] p-5 sm:p-6"
+                  >
+                    <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-black">
+                            {label(document.document_type)}
+                          </h3>
+
+                          <span
+                            className={`rounded-full border px-3 py-1 text-[9px] font-black uppercase tracking-wider ${documentStatusClasses(
+                              document.status
+                            )}`}
+                          >
+                            {label(document.status)}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-sm font-bold text-[#17302d]/70">
+                          {customer?.full_name || "Customer"}
+                        </p>
+                        <p className="mt-1 text-xs text-[#17302d]/45">
+                          {customer?.email || "Email unavailable"}
+                        </p>
+
+                        <div className="mt-4 rounded-2xl border border-[#17302d]/8 bg-white p-4">
+                          <p className="truncate text-sm font-black">
+                            {document.file_name}
+                          </p>
+                          <p className="mt-2 text-[10px] text-[#17302d]/40">
+                            {formatFileSize(document.file_size)} • Uploaded{" "}
+                            {formatCreatedAt(document.created_at)}
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => viewDocument(document)}
+                            className="mt-4 rounded-xl bg-[#153e38] px-4 py-3 text-xs font-black text-white shadow-sm"
+                          >
+                            Open Document
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-[#c9a96b]/25 bg-white p-4">
+                        <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[#98733b]">
+                          Admin Note
+                          <textarea
+                            rows={4}
+                            value={documentNotes[document.id] || ""}
+                            disabled={isReviewing}
+                            onChange={(event) =>
+                              setDocumentNotes((current) => ({
+                                ...current,
+                                [document.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Optional note. Rejection ki wajah yahan likhein..."
+                            className="mt-2 block w-full resize-none rounded-xl border border-[#17302d]/10 bg-[#fbfaf7] px-3 py-3 text-xs font-medium normal-case tracking-normal text-[#17302d] outline-none"
+                          />
+                        </label>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            disabled={isReviewing}
+                            onClick={() => reviewDocument(document, "approved")}
+                            className="rounded-xl bg-emerald-700 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isReviewing ? "Saving..." : "Approve"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isReviewing}
+                            onClick={() => reviewDocument(document, "rejected")}
+                            className="rounded-xl bg-red-600 px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isReviewing ? "Saving..." : "Reject"}
+                          </button>
+                        </div>
+
+                        {document.reviewed_at && (
+                          <p className="mt-3 text-[10px] text-[#17302d]/35">
+                            Last reviewed {formatCreatedAt(document.reviewed_at)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
