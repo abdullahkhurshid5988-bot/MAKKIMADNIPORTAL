@@ -4,11 +4,8 @@ import Image from "next/image";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { createClient } from "../../../LIB/SUPABASE/client";
 
-type DocumentType =
-  | "passport"
-  | "cnic"
-  | "photos"
-  | "vaccination";
+type DocumentType = "passport" | "cnic" | "photos" | "vaccination";
+type DocumentStatus = "pending" | "approved" | "rejected";
 
 type Profile = {
   full_name: string | null;
@@ -16,16 +13,18 @@ type Profile = {
   account_status: string | null;
 };
 
-type StoredFile = {
-  id: string | null;
-  name: string;
-  created_at: string | null;
-  updated_at: string | null;
-  metadata: {
-    size?: number;
-    mimetype?: string;
-  } | null;
-  documentType: DocumentType;
+type DocumentRecord = {
+  id: string;
+  user_id: string;
+  document_type: DocumentType;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size: number | null;
+  status: DocumentStatus;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type Message = {
@@ -75,10 +74,11 @@ function safeFileName(fileName: string) {
     .toLowerCase();
 }
 
-function formatFileSize(size?: number) {
+function formatFileSize(size?: number | null) {
   if (!size) return "Unknown size";
 
   if (size < 1024) return `${size} B`;
+
   if (size < 1024 * 1024) {
     return `${(size / 1024).toFixed(1)} KB`;
   }
@@ -98,52 +98,50 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function statusClasses(status: DocumentStatus) {
+  if (status === "approved") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "rejected") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
+function statusLabel(status: DocumentStatus) {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Pending Review";
+}
+
 export default function DocumentsPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [userId, setUserId] = useState("");
-  const [files, setFiles] = useState<StoredFile[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [uploadingType, setUploadingType] =
     useState<DocumentType | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
 
   async function loadDocuments(activeUserId: string) {
     const supabase = createClient();
-    const loadedFiles: StoredFile[] = [];
 
-    for (const document of documentTypes) {
-      const { data, error } = await supabase.storage
-        .from("customer-documents")
-        .list(`${activeUserId}/${document.id}`, {
-          limit: 100,
-          sortBy: {
-            column: "created_at",
-            order: "desc",
-          },
-        });
+    const { data, error } = await supabase
+      .from("customer_documents")
+      .select(
+        "id, user_id, document_type, file_name, storage_path, mime_type, file_size, status, admin_note, created_at, updated_at"
+      )
+      .eq("user_id", activeUserId)
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        throw error;
-      }
-
-      for (const file of data || []) {
-        if (!file.name || file.name === ".emptyFolderPlaceholder") {
-          continue;
-        }
-
-        loadedFiles.push({
-          id: file.id ?? null,
-          name: file.name,
-          created_at: file.created_at ?? null,
-          updated_at: file.updated_at ?? null,
-          metadata:
-            (file.metadata as StoredFile["metadata"]) ?? null,
-          documentType: document.id,
-        });
-      }
+    if (error) {
+      throw error;
     }
 
-    setFiles(loadedFiles);
+    setDocuments((data || []) as DocumentRecord[]);
   }
 
   useEffect(() => {
@@ -210,24 +208,32 @@ export default function DocumentsPage() {
     };
   }, []);
 
-  const filesByType = useMemo(() => {
+  const documentsByType = useMemo(() => {
     return documentTypes.reduce(
       (result, document) => {
-        result[document.id] = files.filter(
-          (file) => file.documentType === document.id
+        result[document.id] = documents.filter(
+          (item) => item.document_type === document.id
         );
 
         return result;
       },
-      {} as Record<DocumentType, StoredFile[]>
+      {} as Record<DocumentType, DocumentRecord[]>
     );
-  }, [files]);
+  }, [documents]);
 
-  const readyCount = useMemo(() => {
+  const uploadedCount = useMemo(() => {
     return documentTypes.filter(
-      (document) => filesByType[document.id].length > 0
+      (document) => documentsByType[document.id].length > 0
     ).length;
-  }, [filesByType]);
+  }, [documentsByType]);
+
+  const approvedCount = useMemo(() => {
+    return documentTypes.filter((document) =>
+      documentsByType[document.id].some(
+        (item) => item.status === "approved"
+      )
+    ).length;
+  }, [documentsByType]);
 
   async function handleFileUpload(
     event: ChangeEvent<HTMLInputElement>,
@@ -264,31 +270,52 @@ export default function DocumentsPage() {
 
     setUploadingType(documentType);
 
-    try {
-      const supabase = createClient();
+    const supabase = createClient();
+    let uploadedPath = "";
 
+    try {
       const cleanName =
         safeFileName(file.name) || `document-${Date.now()}`;
 
-      const path = `${userId}/${documentType}/${Date.now()}-${cleanName}`;
+      uploadedPath =
+        `${userId}/${documentType}/${Date.now()}-${cleanName}`;
 
-      const { error } = await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from("customer-documents")
-        .upload(path, file, {
+        .upload(uploadedPath, file, {
           cacheControl: "3600",
           upsert: false,
           contentType: file.type,
         });
 
-      if (error) {
-        throw error;
+      if (storageError) {
+        throw storageError;
+      }
+
+      const { error: recordError } = await supabase
+        .from("customer_documents")
+        .insert({
+          user_id: userId,
+          document_type: documentType,
+          file_name: file.name,
+          storage_path: uploadedPath,
+          mime_type: file.type,
+          file_size: file.size,
+        });
+
+      if (recordError) {
+        await supabase.storage
+          .from("customer-documents")
+          .remove([uploadedPath]);
+
+        throw recordError;
       }
 
       await loadDocuments(userId);
 
       setMessage({
         type: "success",
-        text: "Document securely upload ho gaya.",
+        text: "Document upload ho gaya aur Admin review ke liye submit kar diya gaya.",
       });
     } catch (error) {
       setMessage({
@@ -303,25 +330,25 @@ export default function DocumentsPage() {
     }
   }
 
-  async function handleView(file: StoredFile) {
-    if (!userId) return;
-
+  async function handleView(document: DocumentRecord) {
     setMessage(null);
 
     try {
       const supabase = createClient();
 
-      const path = `${userId}/${file.documentType}/${file.name}`;
-
       const { data, error } = await supabase.storage
         .from("customer-documents")
-        .createSignedUrl(path, 60);
+        .createSignedUrl(document.storage_path, 60);
 
       if (error) {
         throw error;
       }
 
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      window.open(
+        data.signedUrl,
+        "_blank",
+        "noopener,noreferrer"
+      );
     } catch (error) {
       setMessage({
         type: "error",
@@ -333,28 +360,45 @@ export default function DocumentsPage() {
     }
   }
 
-  async function handleDelete(file: StoredFile) {
-    if (!userId) return;
+  async function handleDelete(document: DocumentRecord) {
+    if (document.status === "approved") {
+      setMessage({
+        type: "info",
+        text: "Approved document delete nahi kiya ja sakta. Company support se contact karein.",
+      });
+      return;
+    }
 
     const confirmed = window.confirm(
-      `Delete "${file.name}"?`
+      `Delete "${document.file_name}"?`
     );
 
     if (!confirmed) return;
 
+    setDeletingId(document.id);
     setMessage(null);
 
     try {
       const supabase = createClient();
 
-      const path = `${userId}/${file.documentType}/${file.name}`;
+      const { error: recordError } = await supabase
+        .from("customer_documents")
+        .delete()
+        .eq("id", document.id);
 
-      const { error } = await supabase.storage
+      if (recordError) {
+        throw recordError;
+      }
+
+      const { error: storageError } = await supabase.storage
         .from("customer-documents")
-        .remove([path]);
+        .remove([document.storage_path]);
 
-      if (error) {
-        throw error;
+      if (storageError) {
+        console.error(
+          "Document database record deleted but storage cleanup failed:",
+          storageError.message
+        );
       }
 
       await loadDocuments(userId);
@@ -371,6 +415,8 @@ export default function DocumentsPage() {
             ? error.message
             : "Document delete nahi ho saka.",
       });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -455,26 +501,30 @@ export default function DocumentsPage() {
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/65">
                 Assalam-o-Alaikum,{" "}
-                {profile?.full_name || "Customer"}. Upload the
-                documents required for your Hajj, Umrah or travel
-                process. Your files are stored in your private
-                customer folder.
+                {profile?.full_name || "Customer"}. Upload your
+                required documents here. Every upload is sent to
+                Makki Madni administration for verification.
               </p>
             </div>
 
             <div className="rounded-[1.8rem] border border-white/15 bg-white/10 p-5 backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ead69d]">
-                    Document Readiness
+                    Uploaded
                   </p>
                   <p className="mt-2 text-3xl font-black">
-                    {readyCount} / {documentTypes.length}
+                    {uploadedCount} / {documentTypes.length}
                   </p>
                 </div>
 
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-xl">
-                  ▤
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ead69d]">
+                    Approved
+                  </p>
+                  <p className="mt-2 text-3xl font-black">
+                    {approvedCount} / {documentTypes.length}
+                  </p>
                 </div>
               </div>
 
@@ -483,18 +533,18 @@ export default function DocumentsPage() {
                   className="h-full rounded-full bg-[#d9b86d] transition-all"
                   style={{
                     width: `${
-                      (readyCount / documentTypes.length) * 100
+                      (approvedCount / documentTypes.length) * 100
                     }%`,
                   }}
                 />
               </div>
 
               <p className="mt-3 text-xs text-white/50">
-                {readyCount === documentTypes.length
-                  ? "All required document categories are ready."
+                {approvedCount === documentTypes.length
+                  ? "All required document categories are approved."
                   : `${
-                      documentTypes.length - readyCount
-                    } document categories still need files.`}
+                      documentTypes.length - approvedCount
+                    } categories still need approval.`}
               </p>
             </div>
           </div>
@@ -515,150 +565,167 @@ export default function DocumentsPage() {
         )}
 
         <section className="mt-7 grid gap-5 lg:grid-cols-2">
-          {documentTypes.map((document) => {
-            const documentFiles = filesByType[document.id];
-            const hasFile = documentFiles.length > 0;
-            const uploading = uploadingType === document.id;
+          {documentTypes.map((documentType) => {
+            const typeDocuments =
+              documentsByType[documentType.id] || [];
 
             return (
               <article
-                key={document.id}
-                className="rounded-[2rem] border border-[#16332f]/10 bg-white p-5 shadow-[0_18px_55px_rgba(26,50,45,0.06)] sm:p-7"
+                key={documentType.id}
+                className="rounded-[2rem] border border-[#16332f]/10 bg-white p-5 shadow-[0_18px_55px_rgba(25,52,47,0.06)] sm:p-6"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#153e38] text-lg text-[#ead69d]">
-                      {document.icon}
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f2ead9] text-lg font-black text-[#8a692f]">
+                      {documentType.icon}
                     </div>
 
                     <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-black">
-                          {document.title}
-                        </h2>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-wider ${
-                            hasFile
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {hasFile ? "Uploaded" : "Required"}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-xs leading-5 text-[#16332f]/45">
-                        {document.subtitle}
+                      <h2 className="text-lg font-black">
+                        {documentType.title}
+                      </h2>
+                      <p className="mt-1 text-xs leading-5 text-[#16332f]/45">
+                        {documentType.subtitle}
                       </p>
                     </div>
                   </div>
+
+                  <span className="rounded-full bg-[#f6f0e4] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-[#88672e]">
+                    {typeDocuments.length} file
+                    {typeDocuments.length === 1 ? "" : "s"}
+                  </span>
                 </div>
 
                 <label
-                  className={`mt-6 flex cursor-pointer items-center justify-center gap-3 rounded-2xl border border-dashed px-5 py-5 text-sm font-black transition ${
-                    uploading
-                      ? "cursor-wait border-[#153e38]/20 bg-[#f6f3eb] text-[#16332f]/40"
-                      : "border-[#b89a5d]/50 bg-[#fbfaf7] text-[#8c6a31] hover:border-[#153e38]/40 hover:bg-white"
+                  className={`mt-5 flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-[#bca46d]/55 bg-[#fbf8f1] px-4 py-4 text-xs font-black text-[#76592c] transition hover:bg-[#f7efdd] ${
+                    uploadingType === documentType.id
+                      ? "pointer-events-none opacity-55"
+                      : ""
                   }`}
                 >
-                  <span>{uploading ? "..." : "+"}</span>
-                  <span>
-                    {uploading
-                      ? "Uploading securely..."
-                      : hasFile
-                        ? "Upload Another File"
-                        : "Choose File to Upload"}
-                  </span>
+                  {uploadingType === documentType.id
+                    ? "Uploading..."
+                    : "+ Upload New Document"}
 
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                    disabled={uploading}
-                    onChange={(event) =>
-                      handleFileUpload(event, document.id)
-                    }
                     className="hidden"
+                    disabled={uploadingType === documentType.id}
+                    onChange={(event) =>
+                      handleFileUpload(event, documentType.id)
+                    }
                   />
                 </label>
 
-                <p className="mt-2 text-center text-[10px] text-[#16332f]/35">
+                <p className="mt-2 text-[10px] text-[#16332f]/35">
                   PDF, JPG or PNG • Maximum 10 MB
                 </p>
 
-                {documentFiles.length > 0 && (
-                  <div className="mt-5 space-y-3">
-                    {documentFiles.map((file) => (
+                <div className="mt-5 space-y-3">
+                  {typeDocuments.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[#16332f]/10 bg-[#fbfaf7] px-4 py-7 text-center">
+                      <p className="text-xs font-bold text-[#16332f]/35">
+                        No document uploaded yet.
+                      </p>
+                    </div>
+                  ) : (
+                    typeDocuments.map((document) => (
                       <div
-                        key={`${document.id}-${file.name}`}
-                        className="rounded-2xl border border-[#16332f]/8 bg-[#fbfaf7] p-4"
+                        key={document.id}
+                        className="rounded-2xl border border-[#16332f]/10 bg-[#fbfaf7] p-4"
                       >
-                        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-black">
-                              {file.name}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="max-w-[280px] truncate text-sm font-black">
+                                {document.file_name}
+                              </p>
+
+                              <span
+                                className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${statusClasses(
+                                  document.status
+                                )}`}
+                              >
+                                {statusLabel(document.status)}
+                              </span>
+                            </div>
+
+                            <p className="mt-2 text-[10px] text-[#16332f]/40">
+                              {formatFileSize(document.file_size)} •{" "}
+                              {formatDate(document.created_at)}
                             </p>
-                            <p className="mt-1 text-[10px] leading-5 text-[#16332f]/40">
-                              {formatFileSize(
-                                file.metadata?.size
-                              )}{" "}
-                              • {formatDate(file.created_at)}
-                            </p>
+
+                            {document.admin_note && (
+                              <div className="mt-3 rounded-xl border border-[#c9a96b]/20 bg-[#fffaf0] px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-[#98733b]">
+                                  Admin Note
+                                </p>
+                                <p className="mt-1 text-xs leading-5 text-[#684f28]">
+                                  {document.admin_note}
+                                </p>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex shrink-0 gap-2">
                             <button
                               type="button"
-                              onClick={() => handleView(file)}
-                              className="rounded-xl border border-[#16332f]/10 bg-white px-3 py-2 text-[10px] font-black text-[#153e38] shadow-sm"
+                              onClick={() => handleView(document)}
+                              className="rounded-xl border border-[#16332f]/10 bg-white px-3 py-2 text-[10px] font-black shadow-sm"
                             >
                               View
                             </button>
 
                             <button
                               type="button"
-                              onClick={() => handleDelete(file)}
-                              className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[10px] font-black text-red-600"
+                              disabled={
+                                document.status === "approved" ||
+                                deletingId === document.id
+                              }
+                              onClick={() => handleDelete(document)}
+                              className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[10px] font-black text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
                             >
-                              Delete
+                              {deletingId === document.id
+                                ? "Deleting..."
+                                : "Delete"}
                             </button>
                           </div>
                         </div>
+
+                        {document.status === "rejected" && (
+                          <p className="mt-3 text-[10px] font-bold text-red-600">
+                            Please upload a corrected document for review.
+                          </p>
+                        )}
+
+                        {document.status === "approved" && (
+                          <p className="mt-3 text-[10px] font-bold text-emerald-700">
+                            Verified by Makki Madni administration.
+                          </p>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </article>
             );
           })}
         </section>
 
-        <section className="mt-7 rounded-[2rem] border border-[#d5bb7d]/40 bg-[#f6ead0] p-6 sm:p-7">
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#846126]">
-                Important
-              </p>
-              <h3 className="mt-2 text-xl font-black">
-                Upload clear and valid documents only.
-              </h3>
-              <p className="mt-2 max-w-3xl text-xs leading-6 text-[#16332f]/55">
-                Blurred, expired or incomplete documents may delay
-                booking or visa processing. Final verification is
-                completed by the Makki Madni operations team.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                window.location.assign("/customer/dashboard")
-              }
-              className="shrink-0 rounded-xl bg-[#153e38] px-5 py-3.5 text-xs font-black text-white"
-            >
-              Return to Dashboard
-            </button>
-          </div>
+        <section className="mt-7 rounded-[2rem] border border-[#d6bd85]/35 bg-[#f6ead0] p-6">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#846126]">
+            Verification Process
+          </p>
+          <h2 className="mt-2 font-serif text-2xl font-semibold">
+            Upload → Review → Approval
+          </h2>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-[#5d4826]/65">
+            New files are marked Pending Review. Makki Madni staff can
+            approve the document or reject it with a note. Rejected
+            files can be replaced by uploading a corrected version.
+            Approved files remain protected from customer deletion.
+          </p>
         </section>
       </div>
     </main>
